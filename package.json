@@ -20,6 +20,8 @@
     "fix": "ultracite fix",
     "start": "next start",
     "start:eve": "eve start",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "typecheck": "next typegen && tsgo --noEmit -p tsconfig.json",
     "validate": "pnpm run check && pnpm run typecheck && eve info"
   },
@@ -66,7 +68,8 @@
     "drizzle-kit": "0.31.10",
     "microsandbox": "^0.5.10",
     "typescript": "7.0.2",
-    "ultracite": "^7.10.5"
+    "ultracite": "^7.10.5",
+    "vitest": "4.1.11"
   },
   "packageManager": "pnpm@10.12.4",
   "engines": {
