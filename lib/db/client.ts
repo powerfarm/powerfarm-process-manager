@@ -72,3 +72,42 @@ export async function isDatabaseSchemaReady() {
     return false;
   }
 }
+
+export async function isProcessSchemaReady() {
+  const url = process.env.DATABASE_URL?.trim();
+
+  if (!url) {
+    return false;
+  }
+
+  try {
+    const sql = neon(url);
+    const rows = (await sql`
+      select
+        to_regclass('public.process') is not null as process_ready,
+        to_regclass('public.process_node') is not null as process_node_ready,
+        to_regclass('public.process_edge') is not null as process_edge_ready,
+        to_regclass('public.process_event') is not null as process_event_ready,
+        to_regclass('public.process_projection') is not null as process_projection_ready
+    `) as unknown as [
+      {
+        readonly process_edge_ready: boolean;
+        readonly process_event_ready: boolean;
+        readonly process_node_ready: boolean;
+        readonly process_projection_ready: boolean;
+        readonly process_ready: boolean;
+      },
+    ];
+    const result = rows[0];
+
+    return Boolean(
+      result?.process_ready &&
+        result.process_node_ready &&
+        result.process_edge_ready &&
+        result.process_event_ready &&
+        result.process_projection_ready
+    );
+  } catch {
+    return false;
+  }
+}

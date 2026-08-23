@@ -1,5 +1,9 @@
 import type { SetupStatus } from "@/lib/chat/types";
-import { isDatabaseConfigured, isDatabaseSchemaReady } from "@/lib/db/client";
+import {
+  isDatabaseConfigured,
+  isDatabaseSchemaReady,
+  isProcessSchemaReady,
+} from "@/lib/db/client";
 
 const PASSWORD_ENV_KEY = "EVE_CHAT_PASSWORD";
 const AUTH_ENV_KEYS = [
@@ -32,8 +36,17 @@ export function isRateLimitConfigured() {
 }
 
 export function getInitialSetupStatus(): SetupStatus {
-  return createSetupStatus({
+  const databaseConfigured = isDatabaseConfigured();
+  return computeSetupStatus({
+    connectionsAvailable:
+      isLocalDevelopment() || CONNECTION_ENV_KEYS.some(hasEnv),
+    databaseConfigured,
     databaseSchemaReady: isDatabaseConfigured(),
+    localDevelopment: isLocalDevelopment(),
+    passwordReady: isPasswordConfigured(),
+    processSchemaReady: databaseConfigured,
+    rateLimitReady: isRateLimitConfigured(),
+    vercelAuthReady: isAuthConfigured(),
   });
 }
 
@@ -41,11 +54,22 @@ export async function getSetupStatus(): Promise<SetupStatus> {
   const databaseConfigured = isDatabaseConfigured();
   const fullEnvironmentReady =
     databaseConfigured && isAuthConfigured() && isRateLimitConfigured();
-  const databaseSchemaReady = fullEnvironmentReady
-    ? await isDatabaseSchemaReady()
-    : false;
+  const [databaseSchemaReady, processSchemaReady] = await Promise.all([
+    fullEnvironmentReady ? isDatabaseSchemaReady() : Promise.resolve(false),
+    databaseConfigured ? isProcessSchemaReady() : Promise.resolve(false),
+  ]);
 
-  return createSetupStatus({ databaseSchemaReady });
+  return computeSetupStatus({
+    connectionsAvailable:
+      isLocalDevelopment() || CONNECTION_ENV_KEYS.some(hasEnv),
+    databaseConfigured,
+    databaseSchemaReady,
+    localDevelopment: isLocalDevelopment(),
+    passwordReady: isPasswordConfigured(),
+    processSchemaReady,
+    rateLimitReady: isRateLimitConfigured(),
+    vercelAuthReady: isAuthConfigured(),
+  });
 }
 
 export async function isAppConfigured() {
@@ -54,21 +78,29 @@ export async function isAppConfigured() {
   return status.appReady;
 }
 
-function createSetupStatus({
+export function computeSetupStatus({
+  connectionsAvailable,
+  databaseConfigured,
   databaseSchemaReady,
+  localDevelopment,
+  passwordReady,
+  processSchemaReady,
+  rateLimitReady,
+  vercelAuthReady,
 }: {
+  readonly connectionsAvailable: boolean;
+  readonly databaseConfigured: boolean;
   readonly databaseSchemaReady: boolean;
+  readonly localDevelopment: boolean;
+  readonly passwordReady: boolean;
+  readonly processSchemaReady: boolean;
+  readonly rateLimitReady: boolean;
+  readonly vercelAuthReady: boolean;
 }): SetupStatus {
-  const databaseConfigured = isDatabaseConfigured();
-  const vercelAuthReady = isAuthConfigured();
-  const rateLimitReady = isRateLimitConfigured();
   const databaseReady = databaseConfigured && databaseSchemaReady;
+  const processStoreReady = databaseConfigured && processSchemaReady;
   const fullEnvironmentReady =
     databaseConfigured && vercelAuthReady && rateLimitReady;
-  const passwordReady = isPasswordConfigured();
-  const localDevReady = isLocalDevelopment();
-  const connectionsAvailable =
-    localDevReady || CONNECTION_ENV_KEYS.some(hasEnv);
 
   if (fullEnvironmentReady) {
     return {
@@ -80,12 +112,13 @@ function createSetupStatus({
       databaseReady,
       databaseSchemaReady,
       missing: databaseSchemaReady ? [] : ["database migrations"],
+      processStoreReady,
       rateLimitReady,
       storageMode: "database",
     };
   }
 
-  if (passwordReady || localDevReady) {
+  if (passwordReady || localDevelopment) {
     return {
       appReady: true,
       authMode: passwordReady ? "password" : "local-dev",
@@ -95,6 +128,7 @@ function createSetupStatus({
       databaseReady,
       databaseSchemaReady,
       missing: [],
+      processStoreReady,
       rateLimitReady,
       storageMode: "browser",
     };
@@ -112,6 +146,7 @@ function createSetupStatus({
       PASSWORD_ENV_KEY,
       "or DATABASE_URL, Better Auth/Vercel OAuth, and Upstash configuration",
     ],
+    processStoreReady,
     rateLimitReady,
     storageMode: "browser",
   };
