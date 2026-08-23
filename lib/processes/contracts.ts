@@ -54,6 +54,16 @@ export const processStatusSchema = z.enum([
   "archived",
 ]);
 
+export const PROCESS_STATUS_LABELS = {
+  archived: "Arquivado",
+  blocked: "Bloqueado",
+  completed: "Concluído",
+  in_progress: "Em andamento",
+  waiting: "Aguardando",
+} as const satisfies Readonly<
+  Record<z.infer<typeof processStatusSchema>, string>
+>;
+
 export const projectionValueTypeSchema = z.enum([
   "text",
   "number",

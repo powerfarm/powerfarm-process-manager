@@ -61,7 +61,12 @@ export interface ProcessService {
     readonly query?: string;
   }) => Promise<ProcessListPage>;
   readonly inspectGraph: (
-    input: OwnerProcessInput
+    input: OwnerProcessInput & {
+      readonly kind?: string;
+      readonly limit?: number;
+      readonly nodeId?: string;
+      readonly relation?: string;
+    }
   ) => Promise<ProcessGraphPage | null>;
   readonly mutateGraph: (
     input: MutatingCommand & { readonly operations: readonly GraphOperation[] }
