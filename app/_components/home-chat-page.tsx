@@ -18,11 +18,13 @@ import {
   writePendingChatMessage,
 } from "@/lib/chat/provisional-chat";
 import type { SetupStatus } from "@/lib/chat/types";
+import { EMPTY_PROCESS_UI_STATE } from "@/lib/processes/ui-projection";
 
 const IDLE_CONTROLLER_STATUS: AgentChatControllerStatus = {
   isBusy: false,
   isDisabled: false,
   isEmpty: true,
+  process: EMPTY_PROCESS_UI_STATE,
 };
 
 export function HomeChatPage() {

@@ -29,11 +29,13 @@ import {
   writePendingChatMessage,
 } from "@/lib/chat/provisional-chat";
 import type { ActiveChat, SetupStatus } from "@/lib/chat/types";
+import { EMPTY_PROCESS_UI_STATE } from "@/lib/processes/ui-projection";
 
 const IDLE_CONTROLLER_STATUS: AgentChatControllerStatus = {
   isBusy: false,
   isDisabled: false,
   isEmpty: true,
+  process: EMPTY_PROCESS_UI_STATE,
 };
 
 export function SessionChatPage({
@@ -325,7 +327,8 @@ export function SessionChatPage({
       setControllerStatus((current) =>
         current.isBusy === status.isBusy &&
         current.isDisabled === status.isDisabled &&
-        current.isEmpty === status.isEmpty
+        current.isEmpty === status.isEmpty &&
+        current.process === status.process
           ? current
           : status
       );

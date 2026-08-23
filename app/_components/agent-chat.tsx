@@ -61,6 +61,11 @@ import {
   skipClientChatAuthorization,
 } from "@/lib/chat/persistence-client";
 import type { ActiveChat, SetupStatus } from "@/lib/chat/types";
+import {
+  EMPTY_PROCESS_UI_STATE,
+  type ProcessUiState,
+  reduceProcessEvents,
+} from "@/lib/processes/ui-projection";
 
 type AgentSnapshot = EveAgentStoreSnapshot<EveMessageData>;
 interface PersistedClientSession {
@@ -104,12 +109,14 @@ export interface AgentChatControllerStatus {
   readonly isBusy: boolean;
   readonly isDisabled: boolean;
   readonly isEmpty: boolean;
+  readonly process: ProcessUiState;
 }
 
 const IDLE_CONTROLLER_STATUS: AgentChatControllerStatus = {
   isBusy: false,
   isDisabled: false,
   isEmpty: true,
+  process: EMPTY_PROCESS_UI_STATE,
 };
 
 const EVE_CREATE_SESSION_PATH = "/eve/v1/session";
@@ -937,6 +944,10 @@ export function AgentChatSession({
       (hasOpenTurn ||
         agent.status === "submitted" ||
         agent.status === "streaming"));
+  const processUiState = useMemo(
+    () => reduceProcessEvents(displayEvents, isBusy),
+    [displayEvents, isBusy]
+  );
   const isTurnBlocked = isBusy || isFinalizingTurn;
   const pendingMessage = pendingUserMessage
     ? createPendingUserMessage(displayChatId, pendingUserMessage)
@@ -1529,6 +1540,7 @@ export function AgentChatSession({
         isDisabled:
           !isSetupReady || isWaitingForAuthorization || isFinalizingTurn,
         isEmpty,
+        process: processUiState,
       }
     );
   }, [
@@ -1540,6 +1552,7 @@ export function AgentChatSession({
     isSetupReady,
     isWaitingForAuthorization,
     onControllerChange,
+    processUiState,
     resetSession,
     sendMessage,
   ]);
