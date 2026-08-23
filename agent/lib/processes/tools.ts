@@ -8,12 +8,15 @@ import {
   PROCESS_SEARCH_LIMIT,
 } from "#lib/processes/config.js";
 import {
+  graphOperationBatchSchema,
   graphOperationSchema,
+  MAX_PROCESS_TAGS,
   PROCESS_STATUS_LABELS,
   processEdgeSchema,
   processEventSchema,
   processNodeSchema,
   processProjectionSchema,
+  processStatusSchema,
   processSummarySchema,
   processToolResultSchema,
 } from "@/lib/processes/contracts";
@@ -134,6 +137,34 @@ function compactProcessOutput(result: {
   return toolOutput.text(
     `Process ${formatProcessNumber(result.process.number)} is ${PROCESS_STATUS_LABELS[result.process.status]} at version ${result.version}.`
   );
+}
+
+function compactMutationOutput(result: {
+  readonly operationSummary: string;
+  readonly process: z.infer<typeof processSummarySchema> | null;
+  readonly version: number | null;
+}) {
+  if (!result.process || result.version === null) {
+    return toolOutput.text("Process mutation did not commit.");
+  }
+  return toolOutput.text(
+    `${formatProcessNumber(result.process.number)} is ${PROCESS_STATUS_LABELS[result.process.status]} at version ${result.version}. ${result.operationSummary}`
+  );
+}
+
+function committedToolResult(
+  binding: ProcessBinding,
+  candidate: unknown
+): z.infer<typeof processToolResultSchema> {
+  const result = processToolResultSchema.parse(candidate);
+  if (!(result.process && result.projection && result.version !== null)) {
+    throw new ProcessError(
+      "process_store_unavailable",
+      "Process memory is temporarily unavailable."
+    );
+  }
+  bindProcess(binding, result.process.id, result.projection.projectionVersion);
+  return result;
 }
 
 export function buildProcessTools({
@@ -348,14 +379,131 @@ export function buildProcessTools({
     },
   });
 
+  const mutateProcessGraph = defineTool({
+    description:
+      "Apply one bounded batch of typed operations to the active authorized process graph. Never use arbitrary patches, paths, ownership fields, provenance fields, or caller-selected mutation keys.",
+    async execute(input, ctx) {
+      return committedToolResult(
+        binding,
+        await service.mutateGraph({
+          context: commandContext(ctx),
+          expectedVersion: input.expectedVersion,
+          operations: input.operations,
+          processId: processIdOrActive(binding, input.processId),
+          reason: input.reason,
+        })
+      );
+    },
+    inputSchema: optionalProcessIdSchema
+      .extend({
+        expectedVersion: z.number().int().nonnegative(),
+        operations: graphOperationBatchSchema,
+        reason: z.string().trim().min(1).max(500),
+      })
+      .strict(),
+    outputSchema: processToolResultSchema,
+    toModelOutput: compactMutationOutput,
+  });
+
+  const changeProcessState = defineTool({
+    description:
+      "Commit an explicitly agreed durable process state. Use only in_progress, waiting, blocked, completed, or archived; transient execution activity is not process state.",
+    async execute(input, ctx) {
+      return committedToolResult(
+        binding,
+        await service.changeState({
+          context: commandContext(ctx),
+          expectedVersion: input.expectedVersion,
+          processId: processIdOrActive(binding, input.processId),
+          reason: input.reason,
+          status: input.status,
+        })
+      );
+    },
+    inputSchema: optionalProcessIdSchema
+      .extend({
+        expectedVersion: z.number().int().nonnegative(),
+        reason: z
+          .string()
+          .trim()
+          .min(1)
+          .max(500)
+          .describe("Concise note recording the explicit agreement."),
+        status: processStatusSchema,
+      })
+      .strict(),
+    outputSchema: processToolResultSchema,
+    toModelOutput: compactMutationOutput,
+  });
+
+  const processTagSchema = processSummarySchema.shape.tags.element;
+  const updateProcessTagsInputSchema = optionalProcessIdSchema
+    .extend({
+      add: z.array(processTagSchema).max(MAX_PROCESS_TAGS).default([]),
+      expectedVersion: z.number().int().nonnegative(),
+      reason: z
+        .string()
+        .trim()
+        .min(1)
+        .max(500)
+        .describe("Concise note recording the explicit agreement."),
+      remove: z.array(processTagSchema).max(MAX_PROCESS_TAGS).default([]),
+    })
+    .strict()
+    .superRefine((input, context) => {
+      if (new Set(input.add).size !== input.add.length) {
+        context.addIssue({
+          code: "custom",
+          message: "add tags must be unique",
+        });
+      }
+      if (new Set(input.remove).size !== input.remove.length) {
+        context.addIssue({
+          code: "custom",
+          message: "remove tags must be unique",
+        });
+      }
+      const removed = new Set(input.remove);
+      if (input.add.some((tag) => removed.has(tag))) {
+        context.addIssue({
+          code: "custom",
+          message: "a tag cannot be added and removed in one mutation",
+        });
+      }
+    });
+
+  const updateProcessTags = defineTool({
+    description:
+      "Add and remove explicitly agreed tags on the active authorized process without replacing unrelated tags.",
+    async execute(input, ctx) {
+      return committedToolResult(
+        binding,
+        await service.updateTags({
+          add: input.add,
+          context: commandContext(ctx),
+          expectedVersion: input.expectedVersion,
+          processId: processIdOrActive(binding, input.processId),
+          reason: input.reason,
+          remove: input.remove,
+        })
+      );
+    },
+    inputSchema: updateProcessTagsInputSchema,
+    outputSchema: processToolResultSchema,
+    toModelOutput: compactMutationOutput,
+  });
+
   return {
     activateProcess,
+    changeProcessState,
     createProcess,
     deactivateProcess,
     findProcesses,
     inspectProcessGraph,
+    mutateProcessGraph,
     readProcess,
     readProcessHistory,
+    updateProcessTags,
   };
 }
 

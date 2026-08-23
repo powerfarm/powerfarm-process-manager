@@ -1,5 +1,6 @@
 import type { ToolContext } from "eve/tools";
 import { describe, expect, it } from "vitest";
+import type { z } from "zod";
 import {
   buildProcessTools,
   type ProcessBinding,
@@ -69,7 +70,7 @@ function projection(process: ProcessSummary): ProcessProjection {
     pendingItems: [],
     processId: process.id,
     processNumber: process.number,
-    projectionVersion: 1,
+    projectionVersion: process.version,
     sourceProcessVersion: process.version,
     status: process.status,
     summary: null,
@@ -94,7 +95,14 @@ function mutationResult(process: ProcessSummary): ProcessMutationResult {
 
 class FakeProcessService implements ProcessService {
   private readonly unavailable = new Set<string>();
+  private readonly mutationReplays = new Map<string, ProcessMutationResult>();
   readonly processes = new Map<string, ProcessSnapshot>();
+  lastChangeStateInput: Parameters<ProcessService["changeState"]>[0] | null =
+    null;
+  lastMutateGraphInput: Parameters<ProcessService["mutateGraph"]>[0] | null =
+    null;
+  lastUpdateTagsInput: Parameters<ProcessService["updateTags"]>[0] | null =
+    null;
 
   get storeUnavailable(): boolean {
     return this.unavailable.has("process-store");
@@ -108,8 +116,14 @@ class FakeProcessService implements ProcessService {
     }
   }
 
-  changeState(): Promise<ProcessMutationResult> {
-    return Promise.reject(new Error("Not used by read-tool tests"));
+  changeState(
+    input: Parameters<ProcessService["changeState"]>[0]
+  ): Promise<ProcessMutationResult> {
+    this.lastChangeStateInput = input;
+    return this.commit(input, (process) => ({
+      ...process,
+      status: input.status,
+    }));
   }
 
   createProcess(input: {
@@ -150,8 +164,11 @@ class FakeProcessService implements ProcessService {
       : null;
   }
 
-  mutateGraph(): Promise<ProcessMutationResult> {
-    return Promise.reject(new Error("Not used by read-tool tests"));
+  mutateGraph(
+    input: Parameters<ProcessService["mutateGraph"]>[0]
+  ): Promise<ProcessMutationResult> {
+    this.lastMutateGraphInput = input;
+    return this.commit(input, (process) => process);
   }
 
   readHistory(): Promise<ProcessEventPage | null> {
@@ -174,8 +191,65 @@ class FakeProcessService implements ProcessService {
     return Promise.reject(new Error("Not used by read-tool tests"));
   }
 
-  updateTags(): Promise<ProcessMutationResult> {
-    return Promise.reject(new Error("Not used by read-tool tests"));
+  updateTags(
+    input: Parameters<ProcessService["updateTags"]>[0]
+  ): Promise<ProcessMutationResult> {
+    this.lastUpdateTagsInput = input;
+    return this.commit(input, (process) => ({
+      ...process,
+      tags: [
+        ...new Set(
+          process.tags
+            .filter((tag) => !input.remove.includes(tag))
+            .concat(input.add)
+        ),
+      ].toSorted(),
+    }));
+  }
+
+  private commit(
+    input: {
+      readonly context: ProcessCommandContext;
+      readonly expectedVersion: number;
+      readonly processId: string;
+    },
+    update: (process: ProcessSummary) => ProcessSummary
+  ): Promise<ProcessMutationResult> {
+    this.requireStore();
+    const replayKey = `${input.context.eveSessionId}:${input.context.turnId}:${input.context.callId}`;
+    const replay = this.mutationReplays.get(replayKey);
+    if (replay) {
+      return Promise.resolve(replay);
+    }
+    const snapshot = this.processes.get(input.processId);
+    if (!snapshot || snapshot.process.ownerId !== input.context.ownerId) {
+      return Promise.reject(
+        new ProcessError("process_not_found", "Process not found.")
+      );
+    }
+    if (snapshot.process.version !== input.expectedVersion) {
+      return Promise.reject(
+        new ProcessError("version_conflict", "Process version changed.")
+      );
+    }
+    const process = update({
+      ...snapshot.process,
+      updatedAt: "2026-08-23T08:01:00.000Z",
+      version: snapshot.process.version + 1,
+    });
+    const result: ProcessMutationResult = {
+      ...mutationResult(process),
+      eventId: `event-${process.version}`,
+      mutationKey: replayKey,
+      operationSummary: "Committed process mutation.",
+    };
+    this.processes.set(process.id, {
+      ...snapshot,
+      process,
+      projection: result.projection,
+    });
+    this.mutationReplays.set(replayKey, result);
+    return Promise.resolve(result);
   }
 
   private requireStore() {
@@ -392,5 +466,145 @@ describe("process read and binding tools", () => {
       value: "Process PROC-000123 is Em andamento at version 1.",
     });
     expect(result.projection?.metrics.liveNodes).toBe(1);
+  });
+});
+
+describe("process mutation tools", () => {
+  function activeHarness() {
+    const service = new FakeProcessService();
+    const process = summary();
+    service.processes.set(process.id, {
+      edges: [],
+      nodes: [],
+      process,
+      projection: projection(process),
+    });
+    const state = binding();
+    state.update(() => ({
+      processId: process.id,
+      projectionVersion: process.version,
+    }));
+    return {
+      process,
+      service,
+      state,
+      tools: buildProcessTools({ binding: state, service }),
+    };
+  }
+
+  it("forwards ctx.callId and the expected process version", async () => {
+    const harness = activeHarness();
+
+    await finalResult(
+      harness.tools.mutateProcessGraph.execute(
+        {
+          expectedVersion: 1,
+          operations: [
+            {
+              kind: "task",
+              label: "Ship the panel",
+              metadata: {},
+              nodeId: "node-1",
+              op: "add_node",
+            },
+          ],
+          reason: "We agreed to add this task.",
+        },
+        toolContext()
+      )
+    );
+
+    expect(harness.service.lastMutateGraphInput).toMatchObject({
+      context: { callId: "call-1", ownerId: "owner-1" },
+      expectedVersion: 1,
+      processId: harness.process.id,
+    });
+  });
+
+  it("rejects arbitrary patch paths and untyped operations at schema parsing", () => {
+    const { tools } = activeHarness();
+    const schema = tools.mutateProcessGraph.inputSchema as z.ZodType;
+
+    expect(() =>
+      schema.parse({
+        expectedVersion: 1,
+        operations: [{ op: "replace", path: "/ownerId", value: "other" }],
+        ownerId: "other",
+        reason: "Unauthorized patch.",
+      })
+    ).toThrow();
+  });
+
+  it("requires an explicit agreed durable state", () => {
+    const { tools } = activeHarness();
+    const schema = tools.changeProcessState.inputSchema as z.ZodType;
+
+    expect(() =>
+      schema.parse({ expectedVersion: 1, status: "processing" })
+    ).toThrow();
+    expect(() =>
+      schema.parse({ expectedVersion: 1, status: "completed" })
+    ).toThrow();
+  });
+
+  it("supports add and remove tag sets without replacing unrelated tags", async () => {
+    const harness = activeHarness();
+
+    const result = await finalResult(
+      harness.tools.updateProcessTags.execute(
+        {
+          add: ["priority"],
+          expectedVersion: 1,
+          reason: "We agreed to change the tags.",
+          remove: ["launch"],
+        },
+        toolContext()
+      )
+    );
+
+    expect(result.process?.tags).toEqual(["priority"]);
+    expect(harness.service.lastUpdateTagsInput).toMatchObject({
+      add: ["priority"],
+      remove: ["launch"],
+    });
+  });
+
+  it("updates the session projection version after a committed mutation", async () => {
+    const harness = activeHarness();
+
+    await finalResult(
+      harness.tools.changeProcessState.execute(
+        {
+          expectedVersion: 1,
+          reason: "We agreed that work is blocked.",
+          status: "blocked",
+        },
+        toolContext()
+      )
+    );
+
+    expect(harness.state.value).toEqual({
+      processId: harness.process.id,
+      projectionVersion: 2,
+    });
+  });
+
+  it("returns the same structured result for an idempotent replay", async () => {
+    const harness = activeHarness();
+    const input = {
+      expectedVersion: 1,
+      reason: "We agreed that work is waiting.",
+      status: "waiting" as const,
+    };
+
+    const first = await finalResult(
+      harness.tools.changeProcessState.execute(input, toolContext())
+    );
+    const replay = await finalResult(
+      harness.tools.changeProcessState.execute(input, toolContext())
+    );
+
+    expect(replay).toEqual(first);
+    expect(replay.version).toBe(2);
   });
 });
