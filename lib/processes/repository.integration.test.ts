@@ -10,6 +10,29 @@ import {
 
 const runDatabaseTests = process.env.RUN_DATABASE_TESTS === "1";
 
+function errorChainMessages(error: unknown): string[] {
+  const messages: string[] = [];
+  let current = error;
+
+  while (current instanceof Error) {
+    messages.push(current.message);
+    current = current.cause;
+  }
+
+  return messages;
+}
+
+async function expectAppendOnlyViolation(operation: Promise<unknown>) {
+  try {
+    await operation;
+    expect.fail("Expected the process_event append-only trigger to reject");
+  } catch (error) {
+    expect(errorChainMessages(error).join("\n")).toContain(
+      "process_event is append-only"
+    );
+  }
+}
+
 function commandContext(
   ownerId: string,
   suffix: string,
@@ -124,14 +147,14 @@ describe.runIf(runDatabaseTests)("Drizzle process repository", () => {
       eq(processEvent.processId, created.process.id)
     );
 
-    await expect(
+    await expectAppendOnlyViolation(
       database
         .update(processEvent)
         .set({ reason: "Mutated" })
         .where(eventFilter)
-    ).rejects.toThrow("process_event is append-only");
-    await expect(
+    );
+    await expectAppendOnlyViolation(
       database.delete(processEvent).where(eventFilter)
-    ).rejects.toThrow("process_event is append-only");
+    );
   });
 });
