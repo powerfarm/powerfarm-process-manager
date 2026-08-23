@@ -1,5 +1,9 @@
-import { neon } from "@neondatabase/serverless";
-import { drizzle, type NeonHttpDatabase } from "drizzle-orm/neon-http";
+import { Client, neon } from "@neondatabase/serverless";
+import {
+  drizzle as drizzleHttp,
+  type NeonHttpDatabase,
+} from "drizzle-orm/neon-http";
+import { drizzle as drizzleServerless } from "drizzle-orm/neon-serverless";
 import * as schema from "@/lib/db/schema";
 
 let database: NeonHttpDatabase<typeof schema> | null = null;
@@ -18,7 +22,7 @@ export function getDb() {
       );
     }
 
-    database = drizzle({ client: neon(url), schema });
+    database = drizzleHttp({ client: neon(url), schema });
   }
 
   return database;
@@ -29,6 +33,39 @@ export const db = new Proxy({} as NeonHttpDatabase<typeof schema>, {
     return (getDb() as unknown as Record<string | symbol, unknown>)[prop];
   },
 });
+
+export function createTransactionalDatabase(url: string) {
+  const client = new Client({ connectionString: url });
+  const transactionalDatabase = drizzleServerless({ client, schema });
+
+  return { client, database: transactionalDatabase };
+}
+
+export type DatabaseTransaction = Parameters<
+  Parameters<
+    ReturnType<typeof createTransactionalDatabase>["database"]["transaction"]
+  >[0]
+>[0];
+
+export async function withDatabaseTransaction<T>(
+  work: (transaction: DatabaseTransaction) => Promise<T>
+): Promise<T> {
+  const url = process.env.DATABASE_URL?.trim();
+  if (!url) {
+    throw new Error(
+      "DATABASE_URL is required. Add Neon to this Vercel project first."
+    );
+  }
+
+  const { client, database: transactionalDatabase } =
+    createTransactionalDatabase(url);
+  try {
+    await client.connect();
+    return await transactionalDatabase.transaction(work);
+  } finally {
+    await client.end();
+  }
+}
 
 export async function isDatabaseSchemaReady() {
   const url = process.env.DATABASE_URL?.trim();
