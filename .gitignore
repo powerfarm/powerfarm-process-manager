@@ -1,10 +1,17 @@
 node_modules
 .env*
+!.env.example
 .eve
 .vercel
 .next
+next-env.d.ts
+.playwright-cli
+.worktrees/
+.workflow-data
+output/playwright
 .output
 .nitro
 dist
 .DS_Store
 *.tsbuildinfo
+.env*.local

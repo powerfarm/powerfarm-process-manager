@@ -1,5 +1,6 @@
 import { type AuthFn, localDev, vercelOidc } from "eve/channels/auth";
 import { eveChannel } from "eve/channels/eve";
+import { betterAuthEveAuth, passwordEveAuth } from "@/lib/eve-auth";
 
 const localDevAuth = localDev();
 
@@ -19,4 +20,7 @@ const localDevUser: AuthFn<Request> = async (request) => {
   return local ? { ...local, principalType: "user" } : null;
 };
 
-export default eveChannel({ auth: [localDevUser, vercelOidc()] });
+export default eveChannel({
+  auth: [betterAuthEveAuth, passwordEveAuth, localDevUser, vercelOidc()],
+  uploadPolicy: "disabled",
+});

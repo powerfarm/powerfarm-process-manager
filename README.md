@@ -7,9 +7,7 @@
 
 Run a team of marketing agents built on [eve](https://eve.dev). You bring work to a team lead: a launch to plan, posts to write, or a page that isn't converting. The lead briefs the right specialist and hands back what they produced.
 
-You talk to it in Slack or a terminal. It delivers real work in the tools you already use: blog drafts in Notion, social posts in Typefully, email campaigns in Resend.
-
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?project-name=marketing-team-eve-template&repository-name=marketing-team-eve-template&repository-url=https%3A%2F%2Fgithub.com%2Fvercel-labs%2Fmarketing-team-eve-template%2Ftree%2Fmain&connect=%5B%7B%22type%22%3A%22notion%22%2C%22env%22%3A%22NOTION_CONNECTOR%22%7D%2C%7B%22type%22%3A%22resend%22%2C%22env%22%3A%22RESEND_CONNECTOR%22%7D%2C%7B%22type%22%3A%22slack%22%2C%22env%22%3A%22SLACK_CONNECTOR%22%2C%22triggers%22%3Atrue%2C%22triggerPath%22%3A%22%2Feve%2Fv1%2Fslack%22%7D%5D&stores=%5B%7B%22type%22%3A%22blob%22%2C%22access%22%3A%22public%22%7D%5D&env=TYPEFULLY_API_KEY&envDescription=API%20key%20for%20the%20Typefully%20MCP%20server%2C%20used%20to%20read%20and%20write%20social%20drafts)
+You talk to it in the built-in Marketing Room web app, or optionally through Slack or the terminal. It delivers real work in the tools you already use: blog drafts in Notion, social posts in Typefully, email campaigns in Resend.
 
 ## What using it looks like
 
@@ -19,31 +17,25 @@ You talk to it in Slack or a terminal. It delivers real work in the tools you al
 >
 > **Lead:** Done. Three drafts are in your Typefully queue: an X thread, a LinkedIn post, and a Bluesky post. Nothing is scheduled yet, so review them and tell me when to queue them for launch morning.
 
-Anything irreversible, like sending an email campaign or publishing a scheduled post, pauses for your approval first. You get an approve or deny button in Slack or the terminal before it goes out.
+Anything irreversible, like sending an email campaign or publishing a scheduled post, pauses for your approval first. The web app renders approvals, connection authorization, tool activity, and streamed reasoning directly in the conversation.
 
 ## Deploy
 
-The one-click deploy provisions and wires up everything the team needs:
+The combined project ships the Next.js app and the eve runtime as one Vercel deployment. Its database-free starter mode needs a strong `EVE_CHAT_PASSWORD`; conversations persist in that browser. The production mode adds Sign in with Vercel, Neon-backed cross-device history, and Upstash rate limiting.
 
-| Provisioned | Sets |
+| Service | Sets |
 | --- | --- |
 | Notion connector | `NOTION_CONNECTOR` |
 | Resend connector | `RESEND_CONNECTOR` |
-| Slack connector | `SLACK_CONNECTOR` |
 | Vercel Blob store | Blob credentials |
-| Prompt for the Typefully API key | `TYPEFULLY_API_KEY` |
+| Starter web authentication | `EVE_CHAT_PASSWORD` |
+| Optional social scheduling | `TYPEFULLY_API_KEY` |
+
+Slack remains optional. Add its connector only if you want Slack as a second channel.
 
 ### Before your first email campaign
 
 Verify a sending domain and create at least one segment in the [Resend dashboard](https://resend.com/domains). The agent sees your verified domains and segments and picks from them, but it cannot create a domain or verify DNS for you.
-
-### Quick start with an AI coding agent
-
-Working in Claude Code or Cursor? Paste this:
-
-```text
-I want to build a team of marketing agents with the eve framework, using the marketing team template. Read the setup instructions at https://agent-resources.dev/marketing-team-eve-template.md and follow them. They will cover deploying the template, building with eve, how everything works overall, and more.
-```
 
 ## The team
 
@@ -65,7 +57,7 @@ Each specialist has a distinct job: the product marketer decides what the team c
 - **Every brief is self-contained.** Specialists start fresh each time, with no shared conversation history, so the lead's brief carries everything and each specialist reads the brand context itself.
 - **Delegation goes one level deep.** Specialists do their own research and edit their own drafts against a written rubric rather than spawning further agents.
 - **Nothing irreversible happens without you.** Sends and deletes in Resend, deletes and scheduled publishes in Typefully, and page moves in Notion all wait for your approval. Drafting stays friction-free. The email specialist also only sees 47 of Resend's roughly 85 tools, so account administration is out of reach entirely.
-- **Slack pins four starter prompts** in a fresh conversation, one per specialist: sharpen our positioning, write a blog post, draft social posts, review a page's SEO.
+- **Slack can pin four starter prompts** when that optional channel is configured: sharpen our positioning, write a blog post, draft social posts, review a page's SEO.
 
 The full approval matrix, the credential model, and the reasoning behind each boundary live in [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
 
@@ -76,17 +68,19 @@ Link the project you deployed, or a fresh one, and pull its environment:
 ```bash
 vercel link
 vercel env pull
-pnpm dev          # then run /model once in the TUI to link a provider
+pnpm dev          # Next.js and eve together at http://localhost:3000
 ```
 
 | Command | What it does |
 | --- | --- |
-| `pnpm dev` | eve dev TUI |
+| `pnpm dev` | Marketing Room web app plus the eve runtime |
+| `pnpm dev:eve` | eve terminal UI only |
 | `pnpm validate` | Lint, typecheck, and discovery diagnostics in one |
 | `pnpm check` / `pnpm fix` | Ultracite check and auto-fix |
-| `pnpm typecheck` | `tsc --noEmit` |
+| `pnpm typecheck` | Next.js route generation plus TypeScript checking |
+| `pnpm build` | Production Next.js and embedded eve build |
 | `npx eve info` | Print every discovered tool, skill, connection, and subagent |
-| `eve deploy` | Ship to production |
+| `vercel deploy` | Ship the combined web app and eve runtime |
 
 ## Under the hood
 
@@ -94,7 +88,10 @@ pnpm dev          # then run /model once in the TUI to link a provider
 | --- | --- |
 | Agent framework | [eve](https://eve.dev) |
 | Language | TypeScript (strict, ESM), Node 24.x |
-| Chat surfaces | Slack via Vercel Connect, the eve dev TUI |
+| Chat surfaces | Marketing Room web app, optional Slack, eve terminal UI |
+| Web application | Next.js 16, React 19, Tailwind CSS, Streamdown |
+| Authentication | Starter password or Better Auth with Sign in with Vercel |
+| Conversation history | Browser storage in starter mode, Neon in production mode |
 | Long-form deliverables and briefs | Notion (MCP) |
 | Social publishing | Typefully (MCP) |
 | Email campaigns | Resend (MCP) |
@@ -115,7 +112,8 @@ The agent auto-updates as you edit these files. [`docs/CUSTOMIZING.md`](./docs/C
 | Voice and banned words | `references/banned-words.json` in each `<surface>-style` skill |
 | Approval gates | The tool lists in each `connections/*.ts` |
 | What the email agent can reach | `ALLOWED_TOOLS` in `connections/resend.ts` |
-| Models | `agent/agent.ts` and each specialist's `agent.ts`, or `/model` in the TUI |
+| Web app and visual language | `app/`, `components/`, and `app/globals.css` |
+| Models | `agent/agent.ts` and each specialist's `agent.ts`, or `/model` in `pnpm dev:eve` |
 
 Specialists don't have to live in this repo. eve's [remote agents](https://eve.dev/docs/guides/remote-agents) let the lead delegate to an agent in its own deployment, with its own skills, connections, and release cycle:
 

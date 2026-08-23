@@ -7,7 +7,7 @@ This document maps how the agent is put together, for humans and AI agents worki
 - **Name:** `marketing-team-eve-template`
 - **Maintainer:** Vercel Labs
 - **License:** MIT
-- **Last updated:** 2026-07-26
+- **Last updated:** 2026-08-23
 
 ## Overview
 
@@ -24,6 +24,10 @@ There is no central registry or wiring file: a tool's name is its filename, a su
 ## Project structure
 
 ```text
+app/                                # Next.js routes, auth endpoints, and durable chat pages
+components/                         # Marketing Room, chat, auth, and UI components
+lib/                                # browser/server auth, chat persistence, setup, and Neon schema
+next.config.ts                      # withEve(): one origin and one Vercel project
 agent/
   agent.ts                          # lead: model and compaction threshold
   instructions.md                   # lead behavior: ground, route once with a full brief, hand back
@@ -109,7 +113,9 @@ agent/
 
 | Component | Lives in | eve primitive | Responsibility |
 | --- | --- | --- | --- |
-| eve channel | `agent/channels/eve.ts` | channel | Inbound route for the dev TUI and your own front end. Chains a `localDev()` shim that upgrades the local principal to a user with `vercelOidc()` to resolve a principal. |
+| Marketing Room | `app/`, `components/`, root `lib/` | `withEve`, `useEveAgent` | Same-origin browser chat with streamed messages, reasoning, tool cards, approvals, connection authorization, durable URLs, reload recovery, and sidebar history. |
+| Browser identity | `lib/eve-auth.ts`, `lib/password-auth.ts`, `lib/auth.ts` | channel auth | Resolves a user principal from the starter password cookie or Better Auth. This principal owns chats and authorizes user-scoped Notion and Resend grants. |
+| eve channel | `agent/channels/eve.ts` | channel | Inbound session routes for the web app and terminal UI. Tries Better Auth, password auth, trusted local development, and Vercel OIDC; browser traffic fails closed when none resolves. |
 | Slack channel | `agent/channels/slack.ts` | channel | Inbound route for Slack. Answers mentions and DMs, and auto-replies to un-mentioned messages only in a subscribed thread whose original requester is still the sole human participant. Credentials and webhook verification come from Vercel Connect. |
 | Lead runtime | `agent/agent.ts`, `agent/instructions.md` | agent | Loads brand context and preferences, picks one specialist, writes the brief, returns the specialist's work without rewriting it. Runs the same model as the specialists; it routes rather than produces, so a cheaper tier here is the first cost lever to reach for. |
 | Shared state tools | `agent/tools/*.ts` + `lib/brand-context`, `lib/user-preferences` | tools | Read and write the team-wide brand context and the per-user preference document in Blob. |
@@ -127,14 +133,15 @@ agent/
 | Campaign tracking | `lib/tracking/` | tool factory | `build_tracked_link` adds `utm_*` parameters to a batch of links, deriving source and medium from the surface and normalizing the campaign name, so one campaign doesn't arrive in analytics as several spellings. Held by the coordinator and the email agent. Deliberately not on links between pages of your own site. |
 | Writing quality | `lib/writing-quality/skill.ts` | skill factory | The surface-independent prose rules and their two reference lists, defined once and called from a one-line `skills/writing-quality.ts` in each agent that drafts or edits prose. `defineSkill` materializes the references as real sibling files, so the compiled package matches an authored directory. |
 
-The two channels are the only inbound boundary, and Blob plus the three MCP servers are the only outbound ones. Everything else is model reasoning over loaded skills. Each specialist call starts a fresh session with none of the lead's conversation, skills, connections, or sandbox, so the lead's job is to write a complete `message`. The tree is one level deep: the lead delegates, and specialists do not.
+The eve channel and optional Slack channel are the inbound boundaries, and Blob plus the three MCP servers are the outbound ones. The browser reaches the eve channel through same-origin `/eve/v1/*` routes mounted by `withEve()`. Everything else is model reasoning over loaded skills. Each specialist call starts a fresh session with none of the lead's conversation, skills, connections, or sandbox, so the lead's job is to write a complete `message`. The tree is one level deep: the lead delegates, and specialists do not.
 
 ## Data flow
 
 ```text
 you
- └─ eve channel (resolve principal)
-     └─ lead
+ └─ Marketing Room or optional Slack
+     └─ eve channel (resolve principal)
+         └─ lead
          ├─ get_brand_context / get_user_preferences        (Blob read)
          ├─ save_brand_context / save_user_preferences      (Blob write, ungated)
          └─ one specialist, briefed in full
@@ -165,9 +172,10 @@ A newsletter is the one request that routes twice. The lead calls `content-marke
 - **Notion** — the workspace the specialists read and write through MCP, and where the content marketer's finished pieces live. Owned by the user, not this project.
 - **Typefully** — the social draft and schedule queue, reached through MCP.
 - **Resend** — the email campaigns, templates, contacts, segments, and delivery records, reached through MCP. Owned by the user, not this project, and the only outbound integration whose writes reach people directly.
-- **Session state** — eve manages conversation state per session; compaction kicks in at 90% of the window for the lead and for every specialist.
+- **Chat history** — starter mode stores chat metadata, Eve session cursors, and event snapshots in the authenticated browser. Production mode stores the same records in Neon under the authenticated user id.
+- **Session state** — eve manages the durable runtime session; the web app persists the cursor needed to reconnect and resume streaming. Compaction kicks in at 90% of the window for the lead and every specialist.
 
-There is no application database.
+Neon is optional. The starter deployment runs without an application database; production multi-user history requires it.
 
 ## External integrations
 
@@ -183,22 +191,24 @@ There is no application database.
 
 ## Deployment & infrastructure
 
-- **Platform:** Vercel. `eve deploy` for production; `eve build` produces the bundle.
+- **Platform:** Vercel. `vercel deploy` ships the Next.js app and eve runtime together; `pnpm build` verifies that combined output.
 - **Stores:** one public Vercel Blob store. Auth is the project's OIDC token, so no Blob credential is stored.
-- **Connectors:** three Vercel Connect connectors, Notion (`NOTION_CONNECTOR`, defaulting to `notion/marketing-team`), Resend (`RESEND_CONNECTOR`, defaulting to `resend/marketing-team`), and Slack (`SLACK_CONNECTOR`, defaulting to `slack/marketing-team`). The Slack one needs `--triggers` and its trigger path set to `/eve/v1/slack`, which the Deploy button does; a connector created by hand with `vercel connect create` has to be re-pointed there. Blob is provisioned as a store, not a connector.
-- **Environment:** `TYPEFULLY_API_KEY` is the only static credential. Notion and Resend are authorized per user in the browser and Slack is brokered by the same Connect layer, so none of them holds a secret here, and Blob and the model use the project's OIDC token. `vercel env pull` gives local runs the same environment as production. Resend also needs a verified sending domain in the workspace before anything can be sent; the agent reads that state but cannot create it.
+- **Connectors:** Notion (`NOTION_CONNECTOR`, defaulting to `notion/marketing-team`) and Resend (`RESEND_CONNECTOR`, defaulting to `resend/marketing-team`) are the web app's configured integrations. Slack (`SLACK_CONNECTOR`) is optional and needs triggers pointed at `/eve/v1/slack`. Blob is provisioned as a store, not a connector.
+- **Environment:** starter mode adds `EVE_CHAT_PASSWORD` as its shared access credential. Full production mode replaces that with Better Auth, Neon, and Upstash variables. `TYPEFULLY_API_KEY` remains the only static outbound-service credential. Notion and Resend are authorized per user, while Blob and the model use the project's OIDC token. Resend needs a verified sending domain before anything can be sent.
 - **Runtime:** Node 24.x, ESM, `moduleResolution: "bundler"`.
-- **Local development:** `vercel link` then `vercel env pull`, then `pnpm dev` for the eve TUI. Run `/model` once to link a model provider. The sandbox only starts against a linked and authenticated Vercel project.
+- **Local development:** `vercel link` then `vercel env pull`, then `pnpm dev` for the same-origin web app at `http://localhost:3000`. Use `pnpm dev:eve` for the terminal UI. The sandbox only starts against a linked and authenticated Vercel project.
 
 ## Development & testing
 
-- **Runtime/TUI:** `pnpm dev` (`eve dev`). Talk to the lead to exercise routing, and watch which specialist it picks.
-- **Type checking:** `pnpm typecheck` (`tsc --noEmit`).
-- **Lint/format:** `pnpm check` and `pnpm fix` (Ultracite / Biome, ~100 files).
+- **Web runtime:** `pnpm dev` starts Next.js and eve together. Verify auth, one streamed turn, reload recovery, approvals, and connection authorization in a real browser.
+- **Runtime/TUI:** `pnpm dev:eve` talks to the same lead without the web layer.
+- **Type checking:** `pnpm typecheck` generates Next.js route types and checks the complete app.
+- **Production build:** `pnpm build` compiles Next.js and the embedded eve service.
+- **Lint/format:** `pnpm check` and `pnpm fix` (Ultracite / Biome).
 - **Discovery diagnostics:** `npx eve info` prints the manifest, currently 5 subagents, 6 root tools, and 1 root connection. Its `Skills` and `Connections` counts cover the root only, so `Skills` reads `0`: all 23 skills belong to subagents, as do the Typefully and Resend connections. Detail lands in `.eve/discovery/diagnostics.json`.
 - **Everything at once:** `pnpm validate`.
 
-There is no unit-test suite. Validation is static (lint, types, discovery) plus manual exercise in the TUI.
+There is no unit-test suite. Validation is static (lint, types, discovery, production build) plus browser or TUI exercise of the affected flow.
 
 ## Glossary
 

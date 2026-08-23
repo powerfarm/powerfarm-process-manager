@@ -1,0 +1,15 @@
+<svg
+  fill="none"
+  height="128"
+  viewBox="0 0 128 128"
+  width="128"
+  xmlns="http://www.w3.org/2000/svg"
+>
+  <title>Marketing Room</title>
+  <rect fill="#5546D8" height="128" rx="30" width="128" />
+  <path
+    d="M28 83V45h10.5L52 67.8 65.5 45H76v38H65.8V61.4L54.7 80h-5.4L38.2 61.4V83H28Z"
+    fill="white"
+  />
+  <path d="M81 47h19L87 83H77.5L89 55h-8V47Z" fill="#CFCAFF" />
+</svg>

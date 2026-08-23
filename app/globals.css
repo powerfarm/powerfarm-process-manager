@@ -1,0 +1,240 @@
+@import "tailwindcss";
+@source "../node_modules/streamdown/dist/*.js";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Newsreader", "Iowan Old Style", "Palatino Linotype", serif;
+  --font-mono:
+    "Geist Mono", "Geist Mono Fallback", ui-monospace, "SFMono-Regular",
+    "Menlo", "Monaco", "Consolas", monospace;
+}
+
+:root,
+.light {
+  --background: oklch(0.975 0.009 255);
+  --foreground: oklch(0.205 0.035 263);
+  --card: oklch(0.997 0.004 255);
+  --card-foreground: oklch(0.205 0.035 263);
+  --popover: oklch(0.997 0.004 255);
+  --popover-foreground: oklch(0.205 0.035 263);
+  --primary: oklch(0.49 0.22 276);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.945 0.018 257);
+  --secondary-foreground: oklch(0.25 0.04 263);
+  --muted: oklch(0.945 0.018 257);
+  --muted-foreground: oklch(0.53 0.035 258);
+  --accent: oklch(0.93 0.035 278);
+  --accent-foreground: oklch(0.32 0.13 276);
+  --destructive: oklch(0.62 0.22 25);
+  --border: oklch(0.895 0.021 258);
+  --input: oklch(0.895 0.021 258);
+  --ring: oklch(0.57 0.2 276);
+  --radius: 0.8rem;
+  --signal: oklch(0.67 0.15 166);
+  color-scheme: light;
+}
+
+.dark {
+  --background: oklch(0.16 0.028 267);
+  --foreground: oklch(0.96 0.012 255);
+  --card: oklch(0.205 0.032 267);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0.032 267);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.72 0.17 278);
+  --primary-foreground: oklch(0.18 0.04 267);
+  --secondary: oklch(0.27 0.035 267);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.27 0.035 267);
+  --muted-foreground: oklch(0.7 0.025 258);
+  --accent: oklch(0.31 0.075 277);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.72 0.18 24);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.72 0.17 278);
+  --signal: oklch(0.76 0.14 166);
+  color-scheme: dark;
+}
+
+* {
+  border-color: var(--border);
+}
+
+html {
+  height: 100%;
+}
+
+body {
+  min-height: 100%;
+  margin: 0;
+  font-family: var(--font-geist-sans), var(--font-sans);
+  color: var(--foreground);
+  background: var(--background);
+}
+
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--font-geist-mono), var(--font-mono);
+}
+
+button,
+input,
+textarea {
+  font-family: inherit;
+}
+
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+
+button:disabled,
+[role="button"][aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+html[data-eve-chat-sidebar="closed"] [data-desktop-sidebar] {
+  width: 0;
+}
+
+.font-display {
+  font-family: var(--font-newsreader), var(--font-display);
+}
+
+.campaign-grid {
+  background-image:
+    linear-gradient(
+      to right,
+      color-mix(in oklab, var(--border) 42%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--border) 42%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 2.75rem 2.75rem;
+  mask-image: linear-gradient(to bottom, black, transparent 76%);
+}
+
+.specialist-roster {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  overflow: hidden;
+  background: color-mix(in oklab, var(--card) 88%, transparent);
+  border: 1px solid color-mix(in oklab, var(--border) 78%, transparent);
+  border-radius: calc(var(--radius) + 0.2rem);
+  box-shadow: 0 18px 48px -36px
+    color-mix(in oklab, var(--foreground) 40%, transparent);
+  backdrop-filter: blur(14px);
+}
+
+.specialist-roster-item {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+  min-width: 0;
+  padding: 0.7rem 0.65rem;
+  font-size: 0.72rem;
+  font-weight: 520;
+  color: var(--muted-foreground);
+  border-right: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+}
+
+.specialist-roster-item:last-child {
+  border-right: 0;
+}
+
+.specialist-roster-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  color: var(--primary);
+}
+
+.specialist-roster-status {
+  flex: none;
+  width: 0.34rem;
+  height: 0.34rem;
+  margin-left: auto;
+  background: var(--signal);
+  border-radius: 999px;
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--signal) 14%, transparent);
+}
+
+@media (max-width: 640px) {
+  .specialist-roster {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .specialist-roster-item {
+    border-bottom: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
+  }
+
+  .specialist-roster-item:nth-child(2n) {
+    border-right: 0;
+  }
+
+  .specialist-roster-item:last-child {
+    grid-column: 1 / -1;
+    border-bottom: 0;
+  }
+}
+
+.shimmer-text {
+  color: transparent;
+  background: linear-gradient(
+    90deg,
+    var(--muted-foreground) 0%,
+    var(--foreground) 45%,
+    var(--muted-foreground) 90%
+  );
+  background-clip: text;
+  background-size: 220% 100%;
+  animation: shimmer-text 1.8s linear infinite;
+  will-change: background-position;
+}
+
+@keyframes shimmer-text {
+  from {
+    background-position: 120% 0;
+  }
+
+  to {
+    background-position: -120% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer-text {
+    animation: none;
+  }
+}

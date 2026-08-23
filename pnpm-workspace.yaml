@@ -1,3 +1,6 @@
+packages:
+  - "."
+
 minimumReleaseAgeExclude:
   - "@chat-adapter/*"
   - "@ai-sdk/*"
@@ -7,3 +10,10 @@ minimumReleaseAgeExclude:
   - ai
   - chat
   - workflow
+  - "@rolldown/*"
+  - experimental-ai-sdk-code-mode
+  - nitro
+  - rolldown
+
+allowBuilds:
+  sharp: false

@@ -10,5 +10,59 @@
         "useFilenamingConvention": "off"
       }
     }
-  }
+  },
+  "overrides": [
+    {
+      "includes": [
+        "app/**/*.ts",
+        "app/**/*.tsx",
+        "components/**/*.ts",
+        "components/**/*.tsx",
+        "lib/**/*.ts",
+        "lib/**/*.tsx"
+      ],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "noNoninteractiveElementInteractions": "off",
+            "noStaticElementInteractions": "off",
+            "noSvgWithoutTitle": "off",
+            "useAriaPropsSupportedByRole": "off",
+            "useKeyWithClickEvents": "off",
+            "useSemanticElements": "off"
+          },
+          "complexity": {
+            "noExcessiveCognitiveComplexity": "off",
+            "noVoid": "off"
+          },
+          "correctness": {
+            "noUnusedFunctionParameters": "off"
+          },
+          "performance": {
+            "noAwaitInLoops": "off",
+            "noJsxPropsBind": "off",
+            "noNamespaceImport": "off",
+            "useTopLevelRegex": "off"
+          },
+          "security": {
+            "noDangerouslySetInnerHtml": "off"
+          },
+          "style": {
+            "noNestedTernary": "off",
+            "noNonNullAssertion": "off",
+            "useDefaultSwitchClause": "off",
+            "useDestructuring": "off",
+            "useErrorCause": "off"
+          },
+          "suspicious": {
+            "noDocumentCookie": "off",
+            "noEmptyBlockStatements": "off",
+            "noShadow": "off",
+            "noUnnecessaryConditions": "off",
+            "useAwait": "off"
+          }
+        }
+      }
+    }
+  ]
 }

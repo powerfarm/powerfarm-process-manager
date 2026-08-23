@@ -8,23 +8,24 @@ This repository holds a team of marketing agents built on the [eve](https://eve.
 
 The lead picks a specialist by reading `description` in each `agent.ts`, so adding a specialist means adding a directory. Nothing in `agent/instructions.md` enumerates them, and nothing should.
 
-The whole agent is defined under `agent/`. eve discovers capabilities from the filesystem. See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the component map, data flow, and boundaries.
+The agent is defined under `agent/`; the Next.js Marketing Room web app lives under `app/`, `components/`, and root `lib/`. `withEve()` ships both as one same-origin deployment. eve discovers capabilities from the filesystem. See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the component map, data flow, and boundaries.
 
 ## Setup & commands
 
 ```bash
 pnpm install        # install dependencies (Node 24.x)
-pnpm dev            # eve dev — local TUI; run /model once to link a model provider
+pnpm dev            # Next.js plus eve at http://localhost:3000
+pnpm dev:eve        # eve terminal UI only; run /model once to link a provider
 pnpm typecheck      # tsc (TypeScript, no emit)
 pnpm check          # ultracite (Biome) lint + format check
 pnpm fix            # ultracite (Biome) auto-fix
-pnpm build          # eve build
-eve deploy          # deploy to Vercel production (use this, not raw `vercel deploy`)
+pnpm build          # production Next.js plus embedded eve build
+vercel deploy       # deploy the combined web app and eve runtime
 npx eve info        # print the discovered surface + discovery diagnostics
 pnpm validate       # check + typecheck + eve info in one command
 ```
 
-There is no unit-test suite. **Verify changes with `pnpm validate` (lint, typecheck, and discovery diagnostics must all report 0 errors / 0 warnings), then exercise the agent in the `pnpm dev` TUI.**
+There is no unit-test suite. **Verify changes with `pnpm validate` (lint, typecheck, and discovery diagnostics must all report 0 errors / 0 warnings) and `pnpm build`, then exercise the affected path in the browser or the `pnpm dev:eve` TUI.**
 
 `npx eve info` is the fastest way to confirm a change landed: it prints every discovered tool, skill, connection, and subagent. When a file you added doesn't show up there, discovery didn't classify it as an authored slot, and `.eve/discovery/diagnostics.json` says why.
 
@@ -167,3 +168,13 @@ Contradictions cost more than verbosity. Take a style skill written in em dashes
 - `npx eve info` still lists every subagent, skill, and tool you expect.
 - No skill has been duplicated without a drift check (see [Shared skills](#shared-skills)).
 - No secrets, `node_modules`, or build output (`.eve`, `.vercel`, `.output`) staged.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->
