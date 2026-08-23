@@ -1,4 +1,6 @@
 import {
+  type EventCursor,
+  type GraphCursor,
   type GraphOperation,
   graphOperationBatchSchema,
   graphOperationSchema,
@@ -56,6 +58,7 @@ export interface ProcessService {
     readonly title: string;
   }) => Promise<ProcessMutationResult>;
   readonly findProcesses: (input: {
+    readonly cursor?: GraphCursor;
     readonly limit: number;
     readonly ownerId: string;
     readonly query?: string;
@@ -63,6 +66,7 @@ export interface ProcessService {
   readonly inspectGraph: (
     input: OwnerProcessInput & {
       readonly kind?: string;
+      readonly cursor?: GraphCursor;
       readonly limit?: number;
       readonly nodeId?: string;
       readonly relation?: string;
@@ -72,7 +76,10 @@ export interface ProcessService {
     input: MutatingCommand & { readonly operations: readonly GraphOperation[] }
   ) => Promise<ProcessMutationResult>;
   readonly readHistory: (
-    input: OwnerProcessInput & { readonly limit: number }
+    input: OwnerProcessInput & {
+      readonly cursor?: EventCursor;
+      readonly limit: number;
+    }
   ) => Promise<ProcessEventPage | null>;
   readonly readProcess: (
     input: OwnerProcessInput

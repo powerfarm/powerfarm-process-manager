@@ -1,4 +1,14 @@
-import { and, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  isNull,
+  lt,
+  or,
+  sql,
+} from "drizzle-orm";
 import {
   type DatabaseTransaction,
   getDb,
@@ -17,6 +27,8 @@ import {
   process as processTable,
 } from "@/lib/db/schema";
 import type {
+  EventCursor,
+  GraphCursor,
   ProcessEdge,
   ProcessEvent,
   ProcessNode,
@@ -25,6 +37,7 @@ import type {
   ProcessToolResult,
 } from "@/lib/processes/contracts";
 import { processToolResultSchema } from "@/lib/processes/contracts";
+import { encodeEventCursor, encodeGraphCursor } from "@/lib/processes/cursor";
 import { ProcessError } from "@/lib/processes/errors";
 import { projectProcess } from "@/lib/processes/projection";
 
@@ -100,11 +113,13 @@ export interface ProcessRepository {
     initialize: (process: ProcessSummary) => ProcessMutationDraft
   ) => Promise<ProcessMutationResult>;
   readonly findProcesses: (input: {
+    readonly cursor?: GraphCursor;
     readonly limit: number;
     readonly ownerId: string;
     readonly query?: string;
   }) => Promise<ProcessListPage>;
   readonly inspectGraph: (input: {
+    readonly cursor?: GraphCursor;
     readonly kind?: string;
     readonly limit?: number;
     readonly nodeId?: string;
@@ -117,6 +132,7 @@ export interface ProcessRepository {
     mutate: (snapshot: ProcessSnapshot) => ProcessMutationDraft
   ) => Promise<ProcessMutationResult>;
   readonly readEvents: (input: {
+    readonly cursor?: EventCursor;
     readonly limit: number;
     readonly ownerId: string;
     readonly processId: string;
@@ -560,6 +576,9 @@ export function createDrizzleProcessRepository(
     findProcesses(input) {
       return storeBoundary(async () => {
         const limit = Math.max(1, Math.min(input.limit, 50));
+        const cursorDate = input.cursor
+          ? new Date(input.cursor.updatedAt)
+          : undefined;
         const query = input.query?.trim();
         const numberMatch = query?.match(/^(?:PROC-0*)?(\d+)$/i);
         const number = numberMatch?.[1]
@@ -574,10 +593,35 @@ export function createDrizzleProcessRepository(
         const rows = await database()
           .select()
           .from(processTable)
-          .where(and(eq(processTable.ownerId, input.ownerId), search))
+          .where(
+            and(
+              eq(processTable.ownerId, input.ownerId),
+              search,
+              input.cursor && cursorDate
+                ? or(
+                    lt(processTable.updatedAt, cursorDate),
+                    and(
+                      eq(processTable.updatedAt, cursorDate),
+                      lt(processTable.id, input.cursor.id)
+                    )
+                  )
+                : undefined
+            )
+          )
           .orderBy(desc(processTable.updatedAt), desc(processTable.id))
-          .limit(limit);
-        return { items: rows.map(toProcessSummary), nextCursor: null };
+          .limit(limit + 1);
+        const pageRows = rows.slice(0, limit);
+        const last = pageRows.at(-1);
+        return {
+          items: pageRows.map(toProcessSummary),
+          nextCursor:
+            rows.length > limit && last
+              ? encodeGraphCursor({
+                  id: last.id,
+                  updatedAt: iso(last.updatedAt),
+                })
+              : null,
+        };
       });
     },
 
@@ -597,37 +641,88 @@ export function createDrizzleProcessRepository(
           return null;
         }
         const limit = Math.max(1, Math.min(input.limit ?? 50, 50));
-        const edgeRows = await database()
-          .select()
-          .from(processEdgeTable)
-          .where(
-            and(
-              eq(processEdgeTable.ownerId, input.ownerId),
-              eq(processEdgeTable.processId, input.processId),
-              isNull(processEdgeTable.tombstonedAt),
-              input.relation
-                ? eq(processEdgeTable.relation, input.relation)
-                : undefined,
-              input.nodeId
-                ? or(
-                    eq(processEdgeTable.sourceNodeId, input.nodeId),
-                    eq(processEdgeTable.targetNodeId, input.nodeId)
-                  )
-                : undefined
+        const cursorDate = input.cursor
+          ? new Date(input.cursor.updatedAt)
+          : undefined;
+
+        if (input.nodeId || input.relation) {
+          const allEdgeRows = await database()
+            .select()
+            .from(processEdgeTable)
+            .where(
+              and(
+                eq(processEdgeTable.ownerId, input.ownerId),
+                eq(processEdgeTable.processId, input.processId),
+                isNull(processEdgeTable.tombstonedAt),
+                input.relation
+                  ? eq(processEdgeTable.relation, input.relation)
+                  : undefined,
+                input.nodeId
+                  ? or(
+                      eq(processEdgeTable.sourceNodeId, input.nodeId),
+                      eq(processEdgeTable.targetNodeId, input.nodeId)
+                    )
+                  : undefined,
+                input.cursor && cursorDate
+                  ? or(
+                      lt(processEdgeTable.updatedAt, cursorDate),
+                      and(
+                        eq(processEdgeTable.updatedAt, cursorDate),
+                        lt(processEdgeTable.id, input.cursor.id)
+                      )
+                    )
+                  : undefined
+              )
             )
-          )
-          .orderBy(desc(processEdgeTable.updatedAt), desc(processEdgeTable.id))
-          .limit(limit);
-        const neighborIds = input.nodeId
-          ? [
-              input.nodeId,
-              ...edgeRows.flatMap((edge) => [
-                edge.sourceNodeId,
-                edge.targetNodeId,
-              ]),
-            ]
-          : [];
-        const nodeRows = await database()
+            .orderBy(
+              desc(processEdgeTable.updatedAt),
+              desc(processEdgeTable.id)
+            )
+            .limit(limit + 1);
+          const edgeRows = allEdgeRows.slice(0, limit);
+          const neighborIds = [
+            ...(input.nodeId ? [input.nodeId] : []),
+            ...edgeRows.flatMap((edge) => [
+              edge.sourceNodeId,
+              edge.targetNodeId,
+            ]),
+          ];
+          const nodeRows =
+            neighborIds.length === 0
+              ? []
+              : await database()
+                  .select()
+                  .from(processNodeTable)
+                  .where(
+                    and(
+                      eq(processNodeTable.ownerId, input.ownerId),
+                      eq(processNodeTable.processId, input.processId),
+                      isNull(processNodeTable.tombstonedAt),
+                      input.kind
+                        ? eq(processNodeTable.kind, input.kind)
+                        : undefined,
+                      inArray(processNodeTable.id, [...new Set(neighborIds)])
+                    )
+                  )
+                  .orderBy(
+                    desc(processNodeTable.updatedAt),
+                    desc(processNodeTable.id)
+                  );
+          const last = edgeRows.at(-1);
+          return {
+            edges: edgeRows.map(toProcessEdge),
+            nextCursor:
+              allEdgeRows.length > limit && last
+                ? encodeGraphCursor({
+                    id: last.id,
+                    updatedAt: iso(last.updatedAt),
+                  })
+                : null,
+            nodes: nodeRows.map(toProcessNode),
+          };
+        }
+
+        const allNodeRows = await database()
           .select()
           .from(processNodeTable)
           .where(
@@ -636,16 +731,53 @@ export function createDrizzleProcessRepository(
               eq(processNodeTable.processId, input.processId),
               isNull(processNodeTable.tombstonedAt),
               input.kind ? eq(processNodeTable.kind, input.kind) : undefined,
-              neighborIds.length > 0
-                ? inArray(processNodeTable.id, [...new Set(neighborIds)])
+              input.cursor && cursorDate
+                ? or(
+                    lt(processNodeTable.updatedAt, cursorDate),
+                    and(
+                      eq(processNodeTable.updatedAt, cursorDate),
+                      lt(processNodeTable.id, input.cursor.id)
+                    )
+                  )
                 : undefined
             )
           )
           .orderBy(desc(processNodeTable.updatedAt), desc(processNodeTable.id))
-          .limit(limit);
+          .limit(limit + 1);
+        const nodeRows = allNodeRows.slice(0, limit);
+        const nodeIds = nodeRows.map((node) => node.id);
+        const edgeRows =
+          nodeIds.length === 0
+            ? []
+            : await database()
+                .select()
+                .from(processEdgeTable)
+                .where(
+                  and(
+                    eq(processEdgeTable.ownerId, input.ownerId),
+                    eq(processEdgeTable.processId, input.processId),
+                    isNull(processEdgeTable.tombstonedAt),
+                    or(
+                      inArray(processEdgeTable.sourceNodeId, nodeIds),
+                      inArray(processEdgeTable.targetNodeId, nodeIds)
+                    )
+                  )
+                )
+                .orderBy(
+                  desc(processEdgeTable.updatedAt),
+                  desc(processEdgeTable.id)
+                )
+                .limit(limit);
+        const last = nodeRows.at(-1);
         return {
           edges: edgeRows.map(toProcessEdge),
-          nextCursor: null,
+          nextCursor:
+            allNodeRows.length > limit && last
+              ? encodeGraphCursor({
+                  id: last.id,
+                  updatedAt: iso(last.updatedAt),
+                })
+              : null,
           nodes: nodeRows.map(toProcessNode),
         };
       });
@@ -746,18 +878,39 @@ export function createDrizzleProcessRepository(
         if (!visible[0]) {
           return null;
         }
+        const limit = Math.max(1, Math.min(input.limit, 50));
         const rows = await database()
           .select()
           .from(processEventTable)
           .where(
             and(
               eq(processEventTable.ownerId, input.ownerId),
-              eq(processEventTable.processId, input.processId)
+              eq(processEventTable.processId, input.processId),
+              input.cursor
+                ? or(
+                    lt(processEventTable.sequence, input.cursor.sequence),
+                    and(
+                      eq(processEventTable.sequence, input.cursor.sequence),
+                      lt(processEventTable.id, input.cursor.eventId)
+                    )
+                  )
+                : undefined
             )
           )
-          .orderBy(desc(processEventTable.sequence))
-          .limit(Math.max(1, Math.min(input.limit, 50)));
-        return { items: rows.map(toProcessEvent), nextCursor: null };
+          .orderBy(desc(processEventTable.sequence), desc(processEventTable.id))
+          .limit(limit + 1);
+        const pageRows = rows.slice(0, limit);
+        const last = pageRows.at(-1);
+        return {
+          items: pageRows.map(toProcessEvent),
+          nextCursor:
+            rows.length > limit && last
+              ? encodeEventCursor({
+                  eventId: last.id,
+                  sequence: last.sequence,
+                })
+              : null,
+        };
       });
     },
 
