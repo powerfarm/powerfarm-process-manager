@@ -9,6 +9,8 @@ Run a team of marketing agents built on [eve](https://eve.dev). You bring work t
 
 You talk to it in the built-in Marketing Room web app, or optionally through Slack or the terminal. It delivers real work in the tools you already use: blog drafts in Notion, social posts in Typefully, email campaigns in Resend.
 
+A conversation starts as open brainstorming. When you and the lead agree that the work has become a process, the lead can create or activate a durable process graph. A small process pill then keeps its number, title, state, human-readable columns, graph slice, and append-only log available across later conversations.
+
 ## What using it looks like
 
 > **You:** We're launching workspace templates next Thursday. Can you draft the announcement posts?
@@ -21,7 +23,7 @@ Anything irreversible, like sending an email campaign or publishing a scheduled 
 
 ## Deploy
 
-The combined project ships the Next.js app and the eve runtime as one Vercel deployment. Its database-free starter mode needs a strong `EVE_CHAT_PASSWORD`; conversations persist in that browser. The production mode adds Sign in with Vercel, Neon-backed cross-device history, and Upstash rate limiting.
+The combined project ships the Next.js app and the eve runtime as one Vercel deployment. Its database-free starter mode needs a strong `EVE_CHAT_PASSWORD`; conversations persist in that browser and process memory stays unavailable. Add `DATABASE_URL` and run the migrations to enable cross-session process memory while keeping password auth and browser chat storage. Full production mode adds Sign in with Vercel, Neon-backed cross-device chat history, and Upstash rate limiting.
 
 | Service | Sets |
 | --- | --- |
@@ -29,6 +31,7 @@ The combined project ships the Next.js app and the eve runtime as one Vercel dep
 | Resend connector | `RESEND_CONNECTOR` |
 | Vercel Blob store | Blob credentials |
 | Starter web authentication | `EVE_CHAT_PASSWORD` |
+| Durable process memory | `DATABASE_URL` plus `pnpm db:migrate` |
 | Optional social scheduling | `TYPEFULLY_API_KEY` |
 
 Slack remains optional. Add its connector only if you want Slack as a second channel.
@@ -58,6 +61,8 @@ Each specialist has a distinct job: the product marketer decides what the team c
 - **Delegation goes one level deep.** Specialists do their own research and edit their own drafts against a written rubric rather than spawning further agents.
 - **Nothing irreversible happens without you.** Sends and deletes in Resend, deletes and scheduled publishes in Typefully, and page moves in Notion all wait for your approval. Drafting stays friction-free. The email specialist also only sees 47 of Resend's roughly 85 tools, so account administration is out of reach entirely.
 - **Slack can pin four starter prompts** when that optional channel is configured: sharpen our positioning, write a blog post, draft social posts, review a page's SEO.
+- **Process memory is conversational.** The lead alone creates, activates, reads, and mutates a process after explicit agreement. Specialists receive a bounded projection when needed; the browser and `/api/processes/*` only read.
+- **State means durable state.** `Em andamento`, `Aguardando`, `Bloqueado`, `Concluído`, and `Arquivado` are stored in the process. The separate `Processando` pulse only describes a tool call in flight.
 
 The full approval matrix, the credential model, and the reasoning behind each boundary live in [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
 
@@ -69,6 +74,7 @@ Link the project you deployed, or a fresh one, and pull its environment:
 vercel link
 vercel env pull
 pnpm dev          # Next.js and eve together at http://localhost:3000
+pnpm db:migrate   # apply chat and process schema migrations to DATABASE_URL
 ```
 
 | Command | What it does |
@@ -76,6 +82,8 @@ pnpm dev          # Next.js and eve together at http://localhost:3000
 | `pnpm dev` | Marketing Room web app plus the eve runtime |
 | `pnpm dev:eve` | eve terminal UI only |
 | `pnpm validate` | Lint, typecheck, and discovery diagnostics in one |
+| `pnpm test` | Run the unit and repository contract suite |
+| `RUN_DATABASE_TESTS=1 pnpm test` | Include transactional Postgres integration tests after migration |
 | `pnpm check` / `pnpm fix` | Ultracite check and auto-fix |
 | `pnpm typecheck` | Next.js route generation plus TypeScript checking |
 | `pnpm build` | Production Next.js and embedded eve build |
@@ -92,6 +100,7 @@ pnpm dev          # Next.js and eve together at http://localhost:3000
 | Web application | Next.js 16, React 19, Tailwind CSS, Streamdown |
 | Authentication | Starter password or Better Auth with Sign in with Vercel |
 | Conversation history | Browser storage in starter mode, Neon in production mode |
+| Process graph, projection, and append-only log | Neon/Postgres whenever `DATABASE_URL` is configured and migrated |
 | Long-form deliverables and briefs | Notion (MCP) |
 | Social publishing | Typefully (MCP) |
 | Email campaigns | Resend (MCP) |
@@ -107,7 +116,7 @@ The agent auto-updates as you edit these files. [`docs/CUSTOMIZING.md`](./docs/C
 | To change | Edit |
 | --- | --- |
 | Who is on the team | Add a directory under `agent/subagents/`; its `description` is all the lead sees when routing |
-| The lead's behavior | `agent/instructions.md` |
+| The lead's behavior | `agent/instructions/base.md` and `agent/instructions/process-context.ts` |
 | A specialist's craft | Its `instructions.md` and `skills/` |
 | Voice and banned words | `references/banned-words.json` in each `<surface>-style` skill |
 | Approval gates | The tool lists in each `connections/*.ts` |

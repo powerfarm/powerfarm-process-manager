@@ -30,12 +30,17 @@ lib/                                # browser/server auth, chat persistence, set
 next.config.ts                      # withEve(): one origin and one Vercel project
 agent/
   agent.ts                          # lead: model and compaction threshold
-  instructions.md                   # lead behavior: ground, route once with a full brief, hand back
+  instructions/
+    base.md                         # lead behavior: ground, route, and process-memory rules
+    process-context.ts              # user-role active-process projection on turn.started
   sandbox.ts                        # Vercel Sandbox backend for the lead
   channels/
     eve.ts                          # inbound route for the TUI and your own front end
     slack.ts                        # inbound route for Slack, credentials via Vercel Connect
   tools/
+    {create,activate,deactivate}_process.ts # session binding and process lifecycle
+    {find,read,inspect}_process*.ts         # owner-scoped bounded reads
+    {mutate,change,update}_process*.ts      # typed graph/state/tag commits
     get_brand_context.ts            # read the team's shared product/positioning/voice document
     save_brand_context.ts           # overwrite it (no approval gate)
     get_user_preferences.ts         # read this principal's standing preferences
@@ -50,6 +55,7 @@ agent/
     artifacts/{config,tools}.ts     # artifact key layout + id format, save/readArtifactTool()
     tracking/{config,tools}.ts      # campaign-tag vocabulary, buildTrackedLinkTool(surfaces)
     writing-quality/{config,skill}.ts # the shared prose-rules skill, used by every prose agent
+    processes/{config,tools}.ts     # defineState binding and lead-only process tool factories
   subagents/
     product-marketer/
       agent.ts  instructions.md     # interview, position, then write the shared document
@@ -117,7 +123,12 @@ agent/
 | Browser identity | `lib/eve-auth.ts`, `lib/password-auth.ts`, `lib/auth.ts` | channel auth | Resolves a user principal from the starter password cookie or Better Auth. This principal owns chats and authorizes user-scoped Notion and Resend grants. |
 | eve channel | `agent/channels/eve.ts` | channel | Inbound session routes for the web app and terminal UI. Tries Better Auth, password auth, trusted local development, and Vercel OIDC; browser traffic fails closed when none resolves. |
 | Slack channel | `agent/channels/slack.ts` | channel | Inbound route for Slack. Answers mentions and DMs, and auto-replies to un-mentioned messages only in a subscribed thread whose original requester is still the sole human participant. Credentials and webhook verification come from Vercel Connect. |
-| Lead runtime | `agent/agent.ts`, `agent/instructions.md` | agent | Loads brand context and preferences, picks one specialist, writes the brief, returns the specialist's work without rewriting it. Runs the same model as the specialists; it routes rather than produces, so a cheaper tier here is the first cost lever to reach for. |
+| Lead runtime | `agent/agent.ts`, `agent/instructions/` | agent | Loads brand context and preferences, picks one specialist, writes the brief, returns the specialist's work without rewriting it, and maintains any explicitly active process. Runs the same model as the specialists; it routes rather than produces, so a cheaper tier here is the first cost lever to reach for. |
+| Process session binding | `agent/lib/processes/config.ts` | `defineState` | Stores only the active process id and observed projection version for one Eve session. It survives resume and compaction but is not shared with specialists or other sessions. |
+| Process context loader | `agent/instructions/process-context.ts` | dynamic instructions | On `turn.started`, loads only the owner-scoped process envelope and visible projection columns as user-role application data. Raw graph rows and event history stay out of the prompt. |
+| Process tools | `agent/tools/*process*.ts`, `agent/lib/processes/tools.ts` | tools | Ten lead-only tools create, bind, query, and commit typed graph, state, and tag operations. Server context supplies owner, session, turn, tool, and `ctx.callId`; the model supplies none of that provenance. |
+| Process store | `lib/processes/`, `lib/db/schema.ts` | application Postgres | Stores process envelopes, nodes, edges, materialized human projections, and an append-only event log in the existing `DATABASE_URL`. Mutations use row locking, expected versions, and unique mutation keys in a transaction. |
+| Process UI | `components/processes/`, `app/api/processes/` | Eve stream + authenticated GET | Reconstructs the active pill from persisted `action.result` events, then refreshes summary, graph, and log through owner-scoped read-only routes. No HTTP mutation route exists. |
 | Shared state tools | `agent/tools/*.ts` + `lib/brand-context`, `lib/user-preferences` | tools | Read and write the team-wide brand context and the per-user preference document in Blob. |
 | Social media coordinator | `agent/subagents/social-media-coordinator/` | subagent | Drafts short-form for five platforms, drives the Typefully queue, reads and writes Notion. Owns six skills. |
 | Product marketer | `agent/subagents/product-marketer/` | subagent | Interviews the user, researches the competitive set, decides positioning and messaging, then writes the shared brand context document. The only specialist whose deliverable is that document rather than a piece of work. Owns four skills and a sandbox. Grades every claim `proven`, `plausible`, or `assumption`, so downstream agents know when to hedge. Does not draft posts, pages, or campaigns. |
@@ -142,6 +153,9 @@ you
  └─ Marketing Room or optional Slack
      └─ eve channel (resolve principal)
          └─ lead
+         ├─ active process id                               (Eve defineState, session only)
+         ├─ active process projection                       (Postgres read on turn.started)
+         ├─ process tools                                   (lead-only typed Postgres commits)
          ├─ get_brand_context / get_user_preferences        (Blob read)
          ├─ save_brand_context / save_user_preferences      (Blob write, ungated)
          └─ one specialist, briefed in full
@@ -168,14 +182,15 @@ A newsletter is the one request that routes twice. The lead calls `content-marke
 
 ## Data stores
 
-- **Vercel Blob** — the only persistent store, one public store (`ASSETS_*`). Four namespaces: the team's shared brand context document under a reserved prefix, per-user preference documents under a reserved `user-preferences/` prefix keyed by resolved principal, handoff artifacts under a reserved `artifacts/` prefix (capped at 200,000 characters), and free-form assets everywhere else. The brand context and preference caps are 20,000 characters. The general asset tools refuse every reserved prefix so they can't read or overwrite state as a side channel.
+- **Vercel Blob** — the document and asset store, one public store (`ASSETS_*`). Four namespaces: the team's shared brand context document under a reserved prefix, per-user preference documents under a reserved `user-preferences/` prefix keyed by resolved principal, handoff artifacts under a reserved `artifacts/` prefix (capped at 200,000 characters), and free-form assets everywhere else. The brand context and preference caps are 20,000 characters. The general asset tools refuse every reserved prefix so they can't read or overwrite state as a side channel.
+- **Postgres process store** — `process`, `process_node`, `process_edge`, `process_projection`, and append-only `process_event` tables in the existing `DATABASE_URL`. It is owner-scoped and crosses Eve sessions. `process_projection` is a rebuildable read model; `process_event` rejects update and delete.
 - **Notion** — the workspace the specialists read and write through MCP, and where the content marketer's finished pieces live. Owned by the user, not this project.
 - **Typefully** — the social draft and schedule queue, reached through MCP.
 - **Resend** — the email campaigns, templates, contacts, segments, and delivery records, reached through MCP. Owned by the user, not this project, and the only outbound integration whose writes reach people directly.
 - **Chat history** — starter mode stores chat metadata, Eve session cursors, and event snapshots in the authenticated browser. Production mode stores the same records in Neon under the authenticated user id.
-- **Session state** — eve manages the durable runtime session; the web app persists the cursor needed to reconnect and resume streaming. Compaction kicks in at 90% of the window for the lead and every specialist.
+- **Session state** — eve manages the durable runtime session; the web app persists the cursor needed to reconnect and resume streaming. The lead's `defineState` stores only the active process binding. Compaction kicks in at 90% of the window for the lead and every specialist.
 
-Neon is optional. The starter deployment runs without an application database; production multi-user history requires it.
+Neon is optional for browser chat but required for durable process memory. Password mode can therefore run as a hybrid: chat stays in authenticated browser storage while process graphs use Postgres. Full production mode uses the same Postgres configuration for both cross-device chat history and process memory. There is no second database client or process-specific environment variable.
 
 ## External integrations
 
@@ -194,7 +209,7 @@ Neon is optional. The starter deployment runs without an application database; p
 - **Platform:** Vercel. `vercel deploy` ships the Next.js app and eve runtime together; `pnpm build` verifies that combined output.
 - **Stores:** one public Vercel Blob store. Auth is the project's OIDC token, so no Blob credential is stored.
 - **Connectors:** Notion (`NOTION_CONNECTOR`, defaulting to `notion/marketing-team`) and Resend (`RESEND_CONNECTOR`, defaulting to `resend/marketing-team`) are the web app's configured integrations. Slack (`SLACK_CONNECTOR`) is optional and needs triggers pointed at `/eve/v1/slack`. Blob is provisioned as a store, not a connector.
-- **Environment:** starter mode adds `EVE_CHAT_PASSWORD` as its shared access credential. Full production mode replaces that with Better Auth, Neon, and Upstash variables. `TYPEFULLY_API_KEY` remains the only static outbound-service credential. Notion and Resend are authorized per user, while Blob and the model use the project's OIDC token. Resend needs a verified sending domain before anything can be sent.
+- **Environment:** starter mode adds `EVE_CHAT_PASSWORD` as its shared access credential. Adding a migrated `DATABASE_URL` enables the process store without changing password auth or browser chat storage. Full production mode combines Better Auth, Neon, and Upstash variables. `TYPEFULLY_API_KEY` remains the only static outbound-service credential. Notion and Resend are authorized per user, while Blob and the model use the project's OIDC token. Resend needs a verified sending domain before anything can be sent.
 - **Runtime:** Node 24.x, ESM, `moduleResolution: "bundler"`.
 - **Local development:** `vercel link` then `vercel env pull`, then `pnpm dev` for the same-origin web app at `http://localhost:3000`. Use `pnpm dev:eve` for the terminal UI. The sandbox only starts against a linked and authenticated Vercel project.
 
@@ -203,12 +218,14 @@ Neon is optional. The starter deployment runs without an application database; p
 - **Web runtime:** `pnpm dev` starts Next.js and eve together. Verify auth, one streamed turn, reload recovery, approvals, and connection authorization in a real browser.
 - **Runtime/TUI:** `pnpm dev:eve` talks to the same lead without the web layer.
 - **Type checking:** `pnpm typecheck` generates Next.js route types and checks the complete app.
+- **Unit tests:** `pnpm test` runs the Vitest contracts for projection, repository, service, Eve tools, dynamic context, authenticated routes, stream projection, browser loading, and status presentation.
+- **Database integration:** after `pnpm db:migrate`, run `RUN_DATABASE_TESTS=1 pnpm vitest run lib/processes/repository.integration.test.ts` against a disposable Postgres database. These tests cover atomic commits, replay, owner isolation, projection rebuilds, and append-only enforcement.
 - **Production build:** `pnpm build` compiles Next.js and the embedded eve service.
 - **Lint/format:** `pnpm check` and `pnpm fix` (Ultracite / Biome).
-- **Discovery diagnostics:** `npx eve info` prints the manifest, currently 5 subagents, 6 root tools, and 1 root connection. Its `Skills` and `Connections` counts cover the root only, so `Skills` reads `0`: all 23 skills belong to subagents, as do the Typefully and Resend connections. Detail lands in `.eve/discovery/diagnostics.json`.
+- **Discovery diagnostics:** `npx eve info` prints the manifest, currently 5 subagents and 16 root tools. Its `Skills` and `Connections` counts cover the root only, so `Skills` reads `0`: all 23 skills belong to subagents, as do the Typefully and Resend connections. Detail lands in `.eve/discovery/diagnostics.json`.
 - **Everything at once:** `pnpm validate`.
 
-There is no unit-test suite. Validation is static (lint, types, discovery, production build) plus browser or TUI exercise of the affected flow.
+The local gate is `pnpm test`, `pnpm validate`, `pnpm build:eve`, and `pnpm build`. A real process acceptance test additionally needs a migrated `DATABASE_URL`, then two separate Eve sessions to prove cross-session activation and version refresh.
 
 ## Glossary
 
@@ -219,5 +236,6 @@ There is no unit-test suite. Validation is static (lint, types, discovery, produ
 - **Skill** — a `SKILL.md` plus optional `references/`, loaded on demand when its frontmatter `description` matches the situation. Scoped to the agent that declares it; there is no shared-skill mechanism, so shared procedures are copied.
 - **Subagent** — a child agent exposed to its parent as a tool. It runs in a fresh session and inherits nothing, so the parent passes everything in `message`.
 - **Principal** — the identity a channel resolves for the caller. Used to key per-user storage.
+- **Process** — an owner-scoped durable graph plus human projection and append-only log. Sessions bind to it explicitly; there is no Project entity or session-process table.
 - **Vercel Connect** — brokers per-user OAuth to third-party services, so the app holds no long-lived user tokens.
 - **OIDC** — the short-lived, per-deployment token that lets the project authenticate to Vercel services such as Blob, the AI Gateway, and Sandbox without a static key.
