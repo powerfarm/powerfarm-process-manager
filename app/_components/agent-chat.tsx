@@ -42,6 +42,7 @@ import {
 import { IntegrationsMenu } from "@/components/chat/integrations-menu";
 import { AgentMessage } from "@/components/chat/message";
 import { MarketingMark } from "@/components/marketing/marketing-mark";
+import { ProcessPill } from "@/components/processes/process-pill";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -2163,14 +2164,22 @@ export function ErrorToast({
 }
 
 export function ComposerFooterControls({
+  processUi,
   setupStatus,
 }: {
+  readonly processUi?: ProcessUiState;
   readonly setupStatus: SetupStatus;
 }) {
   const { enabledConnections, setConnectionEnabled } = useChatShell();
 
   return (
     <div className="flex min-w-0 max-w-full items-center gap-1.5 overflow-hidden">
+      {processUi ? (
+        <ProcessPill
+          processStoreReady={setupStatus.processStoreReady}
+          state={processUi}
+        />
+      ) : null}
       <ComposerHint setupStatus={setupStatus} />
       {setupStatus.connectionsAvailable ? (
         <IntegrationsMenu

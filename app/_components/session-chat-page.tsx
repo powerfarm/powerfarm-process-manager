@@ -426,7 +426,12 @@ export function SessionChatPage({
           <ChatComposer
             disabled={composerDisabled}
             disabledReason={composerDisabledReason}
-            footerStart={<ComposerFooterControls setupStatus={setupStatus} />}
+            footerStart={
+              <ComposerFooterControls
+                processUi={controllerStatus.process}
+                setupStatus={setupStatus}
+              />
+            }
             isBusy={controllerStatus.isBusy}
             onChange={setDraft}
             onStop={handleComposerStop}
