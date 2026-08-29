@@ -66,7 +66,7 @@ export function ProcessPanel({
   return (
     <div className="flex max-h-[min(72vh,38rem)] min-h-0 flex-col">
       <div className="shrink-0 border-b px-4 pt-4 pb-3">
-        <div className="flex min-w-0 items-start justify-between gap-3 pr-7 sm:pr-0">
+        <div className="flex min-w-0 items-start justify-between gap-3 pr-7">
           <div className="min-w-0">
             <p className="font-mono text-[9px] text-primary uppercase tracking-[0.18em]">
               {formatProcessNumber(process.number)} · memória de processo

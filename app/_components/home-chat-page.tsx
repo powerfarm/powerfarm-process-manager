@@ -12,9 +12,11 @@ import { ChatComposer } from "@/components/chat/composer";
 import { TemplateFooterLinks } from "@/components/chat/template-footer-links";
 import { MarketingMark } from "@/components/marketing/marketing-mark";
 import { SpecialistRoster } from "@/components/marketing/specialist-roster";
+import type { ComposerAttachment } from "@/lib/chat/attachments";
 import { getChatMessageLengthError } from "@/lib/chat/limits";
 import {
   createProvisionalChatId,
+  writePendingChatAttachments,
   writePendingChatMessage,
 } from "@/lib/chat/provisional-chat";
 import type { SetupStatus } from "@/lib/chat/types";
@@ -31,6 +33,9 @@ export function HomeChatPage() {
   const { requestSignIn, setActiveChatId, setupStatus, viewer } =
     useChatShell();
   const [draft, setDraft] = useState("");
+  const [attachments, setAttachments] = useState<readonly ComposerAttachment[]>(
+    []
+  );
   const [submitting, setSubmitting] = useState(false);
   const [clientError, setClientError] = useState<string | null>(null);
   const [dismissedError, setDismissedError] = useState<string | null>(null);
@@ -70,7 +75,7 @@ export function HomeChatPage() {
   }, [clientError]);
 
   const handleSubmit = useCallback(
-    (text: string) => {
+    (text: string, submitted: readonly ComposerAttachment[]) => {
       const message = text.trim();
 
       if (!message || submittingRef.current) {
@@ -102,6 +107,7 @@ export function HomeChatPage() {
       submittingRef.current = true;
       setSubmitting(true);
       setDraft("");
+      setAttachments([]);
 
       const provisionalChatId = createProvisionalChatId();
       const didStoreMessage = writePendingChatMessage(
@@ -113,10 +119,12 @@ export function HomeChatPage() {
         submittingRef.current = false;
         setSubmitting(false);
         setDraft(message);
+        setAttachments(submitted);
         setClientError("Failed to start chat.");
         return;
       }
 
+      writePendingChatAttachments(provisionalChatId, submitted);
       setActiveChatId(provisionalChatId);
       router.push(`/chat/${provisionalChatId}`, { scroll: false });
     },
@@ -172,12 +180,15 @@ export function HomeChatPage() {
             </div>
             <SpecialistRoster />
             <ChatComposer
+              attachments={attachments}
               autoFocus
               disabled={composerDisabled}
               disabledReason={composerDisabledReason}
               footerStart={<ComposerFooterControls setupStatus={setupStatus} />}
               isBusy={IDLE_CONTROLLER_STATUS.isBusy}
               isPreparing={submitting}
+              onAttachmentError={setClientError}
+              onAttachmentsChange={setAttachments}
               onChange={setDraft}
               onStop={() => {}}
               onSubmit={handleSubmit}

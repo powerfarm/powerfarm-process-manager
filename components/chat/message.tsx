@@ -5,7 +5,9 @@ import {
   CheckIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  DownloadIcon,
   Loader2Icon,
+  PaperclipIcon,
   XIcon,
 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
@@ -17,6 +19,10 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
+import {
+  formatAttachmentSize,
+  isPreviewableImage,
+} from "@/lib/chat/attachments";
 import { cn } from "@/lib/utils";
 
 const STREAM_TEXT_TICK_MS = 60;
@@ -116,6 +122,17 @@ function AgentMessageParts({
         parts={partsForGroup}
       />
     );
+
+    for (const part of partsForGroup) {
+      const sharedFile = readSharedFile(part);
+
+      if (sharedFile) {
+        elements.push(
+          <SharedFileCard file={sharedFile} key={`file:${part.toolCallId}`} />
+        );
+      }
+    }
+
     pendingTools = [];
   };
 
@@ -183,9 +200,58 @@ function AgentMessagePart({
           text={part.text}
         />
       );
+    case "file":
+      return (
+        <AttachmentPart
+          filename={part.filename}
+          mediaType={part.mediaType}
+          size={part.size}
+          url={part.url}
+        />
+      );
     case "dynamic-tool":
       return null;
   }
+}
+
+function AttachmentPart({
+  filename,
+  mediaType,
+  size,
+  url,
+}: {
+  readonly filename?: string;
+  readonly mediaType: string;
+  readonly size?: number;
+  readonly url?: string;
+}) {
+  const label = filename ?? mediaType;
+  const preview = isPreviewableImage(mediaType) && url ? url : null;
+
+  return (
+    <div className="my-1 flex min-w-0 items-center gap-2 rounded-lg border border-border/50 bg-background/50 px-1.5 py-1">
+      {preview ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          alt=""
+          className="size-6 shrink-0 rounded object-cover"
+          height={24}
+          src={preview}
+          width={24}
+        />
+      ) : (
+        <span className="flex size-6 shrink-0 items-center justify-center rounded bg-muted/70 text-muted-foreground">
+          <PaperclipIcon className="size-3" />
+        </span>
+      )}
+      <span className="min-w-0 truncate text-[12px] leading-5">{label}</span>
+      {size === undefined ? null : (
+        <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+          {formatAttachmentSize(size)}
+        </span>
+      )}
+    </div>
+  );
 }
 
 function UserTextPart({ text }: { readonly text: string }) {
@@ -1073,6 +1139,88 @@ function truncateText(text: string, maxLength: number) {
   }
 
   return `${text.slice(0, maxLength)}\n...`;
+}
+
+interface SharedFile {
+  readonly contentType?: string;
+  readonly filename: string;
+  readonly size?: number;
+  readonly url: string;
+}
+
+const SHARE_FILE_TOOL = "share file";
+
+/**
+ * Read the file a settled `share_file` call published, when it published one.
+ *
+ * @remarks
+ * A tool card keeps its result folded away, which is right for a JSON payload and wrong for the
+ * one result the person is meant to act on. The link the lead just produced gets its own card
+ * under the tool line.
+ */
+function readSharedFile(part: EveDynamicToolPart): SharedFile | null {
+  if (
+    part.state !== "output-available" ||
+    normalizeToolName(resolveToolName(part)) !== SHARE_FILE_TOOL
+  ) {
+    return null;
+  }
+
+  const output = asRecord(part.output);
+  const url = readString(output, ["url"]);
+
+  if (!(output?.success === true && url)) {
+    return null;
+  }
+
+  return {
+    contentType: readString(output, ["contentType"]) ?? undefined,
+    filename: readString(output, ["filename"]) ?? "file",
+    size: typeof output.size === "number" ? output.size : undefined,
+    url,
+  };
+}
+
+function SharedFileCard({ file }: { readonly file: SharedFile }) {
+  const preview = isPreviewableImage(file.contentType) ? file.url : null;
+
+  return (
+    <a
+      className="mx-3 my-2 flex max-w-sm items-center gap-3 rounded-xl border border-border/70 bg-card/60 p-2.5 transition-colors hover:border-border"
+      href={file.url}
+      rel="noreferrer"
+      target="_blank"
+    >
+      {preview ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          alt=""
+          className="size-10 shrink-0 rounded-lg object-cover"
+          height={40}
+          src={preview}
+          width={40}
+        />
+      ) : (
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted/70 text-muted-foreground">
+          <PaperclipIcon className="size-4" />
+        </span>
+      )}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[13px] leading-5">
+          {file.filename}
+        </span>
+        <span className="block truncate font-mono text-[10px] text-muted-foreground">
+          {[
+            file.size === undefined ? null : formatAttachmentSize(file.size),
+            file.contentType,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </span>
+      </span>
+      <DownloadIcon className="size-3.5 shrink-0 text-muted-foreground" />
+    </a>
+  );
 }
 
 function partKey(part: EveMessagePart, index: number): string {

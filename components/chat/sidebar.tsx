@@ -15,6 +15,7 @@ import {
 } from "@/components/auth/auth-display";
 import { UserMenu } from "@/components/auth/user-menu";
 import { MarketingMark } from "@/components/marketing/marketing-mark";
+import { ProcessList } from "@/components/processes/process-list";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -187,6 +188,12 @@ export function ChatSidebar({
               );
             })}
           </div>
+        ) : null}
+        {viewer ? (
+          <ProcessList
+            activeChatId={activeChatId}
+            processStoreReady={setupStatus.processStoreReady}
+          />
         ) : null}
         {hasMoreChats ? (
           <div className="px-2 py-2" ref={sentinelRef}>

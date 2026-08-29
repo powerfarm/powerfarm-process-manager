@@ -2,12 +2,14 @@
 
 This document maps how the agent is put together, for humans and AI agents working in the repo. Keep it current as the codebase evolves.
 
+It covers the shape of the system and the reasoning behind each boundary. For the file-level map, the traced runtime flows, and the framework behaviors worth knowing before you edit, read [`SYSTEM_MAP.md`](./SYSTEM_MAP.md).
+
 ## Project identification
 
 - **Name:** `marketing-team-eve-template`
 - **Maintainer:** Vercel Labs
 - **License:** MIT
-- **Last updated:** 2026-08-23
+- **Last updated:** 2026-08-29
 
 ## Overview
 
@@ -35,8 +37,10 @@ agent/
     process-context.ts              # user-role active-process projection on turn.started
   sandbox.ts                        # Vercel Sandbox backend for the lead
   channels/
-    eve.ts                          # inbound route for the TUI and your own front end
+    eve.ts                          # inbound route for the TUI and your own front end, plus the
+                                    #   attachment upload policy the composer mirrors
     slack.ts                        # inbound route for Slack, credentials via Vercel Connect
+    mcp.ts                          # stateless MCP endpoint, one bearer token bound to one user
   tools/
     {create,activate,deactivate}_process.ts # session binding and process lifecycle
     {find,read,inspect}_process*.ts         # owner-scoped bounded reads
@@ -47,8 +51,10 @@ agent/
     save_user_preferences.ts        # write them
     clear_user_preferences.ts       # delete them (approval: always)
     read_artifact.ts                # read a handoff artifact by id, on request
+    share_file.ts                   # publish a sandbox file to Blob and return its link
   lib/                              # shared typed helpers; imported as #lib/<domain>/<file>.js
-    vercel-blob/{config,tools}.ts   # Blob key layout, reserved-prefix guards, 5 asset tool factories
+    vercel-blob/{config,tools}.ts   # Blob key layout, reserved-prefix guards, 5 asset tool
+                                    #   factories plus shareFileTool()
     brand-context/{config,tools}.ts # brand context key + size cap, get/save tool factories
     user-preferences/config.ts      # principal-scoped key + size cap (no tools; consumed by root tools)
     content/{config,tools}.ts       # style-skill layout + match helpers, lintAgainstStyleTool(surfaces)
@@ -123,12 +129,15 @@ agent/
 | Browser identity | `lib/eve-auth.ts`, `lib/password-auth.ts`, `lib/auth.ts` | channel auth | Resolves a user principal from the starter password cookie or Better Auth. This principal owns chats and authorizes user-scoped Notion and Resend grants. |
 | eve channel | `agent/channels/eve.ts` | channel | Inbound session routes for the web app and terminal UI. Tries Better Auth, password auth, trusted local development, and Vercel OIDC; browser traffic fails closed when none resolves. |
 | Slack channel | `agent/channels/slack.ts` | channel | Inbound route for Slack. Answers mentions and DMs, and auto-replies to un-mentioned messages only in a subscribed thread whose original requester is still the sole human participant. Credentials and webhook verification come from Vercel Connect. |
+| MCP channel | `agent/channels/mcp.ts`, `lib/mcp-auth.ts` | channel | Publishes the lead at `/eve/v1/mcp` as `agent_start`, `agent_get`, `agent_update`, and `agent_cancel`. One bearer token maps to one application user, set by `EVE_MCP_BEARER_TOKEN` and `EVE_MCP_PRINCIPAL_ID`, so another application delegating here reaches the same process memory as the browser. Callers cannot select an owner. |
+| Attachments | `lib/chat/attachments.ts`, `components/chat/composer.tsx`, `agent/channels/eve.ts` | channel upload policy | The composer's `+` reads files as base64 `data:` URLs and sends them as AI SDK file parts. One module holds the size cap, the media-type allow list, and the count limit; the channel enforces the same values and answers 413 or 415. eve stages the bytes under `/workspace/attachments` before the first model step, so the lead opens a real file with `bash`. Inline bytes are dropped from the event before it is stored, leaving the filename, media type, and size. |
+| Shared files | `agent/tools/share_file.ts`, `lib/vercel-blob/tools.ts` | tool | The return path. Reads a file from the lead's sandbox and publishes it under the `shared/` Blob prefix, so bytes never pass through the model's context. The chat renders the result as a card with a link and, for images, a thumbnail. A specialist reaches the same file with `download_asset`. |
 | Lead runtime | `agent/agent.ts`, `agent/instructions/` | agent | Loads brand context and preferences, picks one specialist, writes the brief, returns the specialist's work without rewriting it, and maintains any explicitly active process. Runs the same model as the specialists; it routes rather than produces, so a cheaper tier here is the first cost lever to reach for. |
 | Process session binding | `agent/lib/processes/config.ts` | `defineState` | Stores only the active process id and observed projection version for one Eve session. It survives resume and compaction but is not shared with specialists or other sessions. |
 | Process context loader | `agent/instructions/process-context.ts` | dynamic instructions | On `turn.started`, loads only the owner-scoped process envelope and visible projection columns as user-role application data. Raw graph rows and event history stay out of the prompt. |
 | Process tools | `agent/tools/*process*.ts`, `agent/lib/processes/tools.ts` | tools | Ten lead-only tools create, bind, query, and commit typed graph, state, and tag operations. Server context supplies owner, session, turn, tool, and `ctx.callId`; the model supplies none of that provenance. |
 | Process store | `lib/processes/`, `lib/db/schema.ts` | application Postgres | Stores process envelopes, nodes, edges, materialized human projections, and an append-only event log in the existing `DATABASE_URL`. Mutations use row locking, expected versions, and unique mutation keys in a transaction. |
-| Process UI | `components/processes/`, `app/api/processes/` | Eve stream + authenticated GET | Reconstructs the active pill from persisted `action.result` events, then refreshes summary, graph, and log through owner-scoped read-only routes. No HTTP mutation route exists. |
+| Process UI | `components/processes/`, `app/api/processes/` | Eve stream + authenticated GET | Reconstructs the active pill from persisted `action.result` events, then refreshes summary, graph, and log through owner-scoped read-only routes. The sidebar lists the person's processes from the same read routes and opens the same panel, so a process is reachable from outside the conversation that created it. No HTTP mutation route exists. |
 | Shared state tools | `agent/tools/*.ts` + `lib/brand-context`, `lib/user-preferences` | tools | Read and write the team-wide brand context and the per-user preference document in Blob. |
 | Social media coordinator | `agent/subagents/social-media-coordinator/` | subagent | Drafts short-form for five platforms, drives the Typefully queue, reads and writes Notion. Owns six skills. |
 | Product marketer | `agent/subagents/product-marketer/` | subagent | Interviews the user, researches the competitive set, decides positioning and messaging, then writes the shared brand context document. The only specialist whose deliverable is that document rather than a piece of work. Owns four skills and a sandbox. Grades every claim `proven`, `plausible`, or `assumption`, so downstream agents know when to hedge. Does not draft posts, pages, or campaigns. |
@@ -150,9 +159,12 @@ The eve channel and optional Slack channel are the inbound boundaries, and Blob 
 
 ```text
 you
- └─ Marketing Room or optional Slack
+ └─ Marketing Room, optional Slack, or another app over MCP
      └─ eve channel (resolve principal)
+         ├─ attachments staged to /workspace/attachments     (before the first model step)
          └─ lead
+         ├─ bash / read_file / write_file                   (Vercel Sandbox: work on the file)
+         ├─ share_file                                      (sandbox file -> Blob link back)
          ├─ active process id                               (Eve defineState, session only)
          ├─ active process projection                       (Postgres read on turn.started)
          ├─ process tools                                   (lead-only typed Postgres commits)
@@ -182,7 +194,8 @@ A newsletter is the one request that routes twice. The lead calls `content-marke
 
 ## Data stores
 
-- **Vercel Blob** — the document and asset store, one public store (`ASSETS_*`). Four namespaces: the team's shared brand context document under a reserved prefix, per-user preference documents under a reserved `user-preferences/` prefix keyed by resolved principal, handoff artifacts under a reserved `artifacts/` prefix (capped at 200,000 characters), and free-form assets everywhere else. The brand context and preference caps are 20,000 characters. The general asset tools refuse every reserved prefix so they can't read or overwrite state as a side channel.
+- **Vercel Blob** — the document and asset store, one public store (`ASSETS_*`). Four namespaces: the team's shared brand context document under a reserved prefix, per-user preference documents under a reserved `user-preferences/` prefix keyed by resolved principal, handoff artifacts under a reserved `artifacts/` prefix (capped at 200,000 characters), and free-form assets everywhere else. The brand context and preference caps are 20,000 characters. The general asset tools refuse every reserved prefix so they can't read or overwrite state as a side channel. Files the lead hands back land under `shared/`, which is deliberately not reserved: the person opens it from the link and a briefed specialist reads it with `download_asset`.
+- **Session sandbox** — inbound attachments live at `/workspace/attachments/<hash>/<filename>` for the life of the Eve session. Session history keeps the reference, not a second copy, so a file that must outlive the session is published with `share_file` rather than left there.
 - **Postgres process store** — `process`, `process_node`, `process_edge`, `process_projection`, and append-only `process_event` tables in the existing `DATABASE_URL`. It is owner-scoped and crosses Eve sessions. `process_projection` is a rebuildable read model; `process_event` rejects update and delete.
 - **Notion** — the workspace the specialists read and write through MCP, and where the content marketer's finished pieces live. Owned by the user, not this project.
 - **Typefully** — the social draft and schedule queue, reached through MCP.
@@ -222,7 +235,7 @@ Neon is optional for browser chat but required for durable process memory. Passw
 - **Database integration:** after `pnpm db:migrate`, run `RUN_DATABASE_TESTS=1 pnpm vitest run lib/processes/repository.integration.test.ts` against a disposable Postgres database. These tests cover atomic commits, replay, owner isolation, projection rebuilds, and append-only enforcement.
 - **Production build:** `pnpm build` compiles Next.js and the embedded eve service.
 - **Lint/format:** `pnpm check` and `pnpm fix` (Ultracite / Biome).
-- **Discovery diagnostics:** `npx eve info` prints the manifest, currently 5 subagents and 16 root tools. Its `Skills` and `Connections` counts cover the root only, so `Skills` reads `0`: all 23 skills belong to subagents, as do the Typefully and Resend connections. Detail lands in `.eve/discovery/diagnostics.json`.
+- **Discovery diagnostics:** `npx eve info` prints the manifest, currently 5 subagents and 17 root tools. Its `Skills` and `Connections` counts cover the root only, so `Skills` reads `0`: all 23 skills belong to subagents, as do the Typefully and Resend connections. Detail lands in `.eve/discovery/diagnostics.json`.
 - **Everything at once:** `pnpm validate`.
 
 The local gate is `pnpm test`, `pnpm validate`, `pnpm build:eve`, and `pnpm build`. A real process acceptance test additionally needs a migrated `DATABASE_URL`, then two separate Eve sessions to prove cross-session activation and version refresh.
@@ -230,7 +243,7 @@ The local gate is `pnpm test`, `pnpm validate`, `pnpm build:eve`, and `pnpm buil
 ## Glossary
 
 - **eve** — Vercel's agent framework. Discovers an agent's capabilities from the filesystem and produces a deployable app.
-- **Channel** — an inbound entry point plus its auth chain. This project has one, `eve`.
+- **Channel** — an inbound entry point plus its auth chain. This project has three: `eve` for the browser and the terminal UI, optional `slack`, and `mcp` for another application delegating to the same lead.
 - **Connection** — an MCP server the agent can call. Its tools appear to the model as `connection__<name>__<tool>`, for example `connection__notion__notion-create-pages`.
 - **Tool** — a typed function in the app runtime, one default export per file, named after its filename.
 - **Skill** — a `SKILL.md` plus optional `references/`, loaded on demand when its frontmatter `description` matches the situation. Scoped to the agent that declares it; there is no shared-skill mechanism, so shared procedures are copied.

@@ -8,6 +8,7 @@ import {
   reservedNamespaceForUrl,
   reservedReadMessage,
   reservedWriteMessage,
+  SHARED_FILES_PREFIX,
 } from "#lib/vercel-blob/config.js";
 
 /**
@@ -412,6 +413,156 @@ export const deleteAssetTool = () =>
     outputSchema: z.object({
       deleted: z.boolean(),
       error: z.string().optional(),
+      success: z.boolean(),
+      url: z.string(),
+    }),
+  });
+
+/**
+ * Largest file the share tool will publish, in bytes.
+ *
+ * @remarks
+ * A share is a link in a conversation rather than a data transfer, so the cap is generous but
+ * finite: past it the agent should say what it produced and where, instead of moving a large
+ * artifact through Blob on its own initiative.
+ */
+const MAX_SHARED_FILE_BYTES = 25_000_000;
+
+/** Characters replaced when a sandbox filename becomes part of a Blob pathname. */
+const UNSAFE_FILENAME_CHARS = /[^\w.-]+/g;
+
+/**
+ * Reduce a sandbox path to a safe Blob filename.
+ *
+ * @param path - The sandbox path the model supplied.
+ * @param override - An explicit filename to use instead of the path's basename.
+ * @returns A filename with no directory separators.
+ */
+const sharedFilename = (path: string, override?: string): string => {
+  const candidate = (override ?? path).split("/").at(-1) ?? "";
+  const safe = candidate.trim().replace(UNSAFE_FILENAME_CHARS, "_");
+
+  return safe.length > 0 ? safe : "file";
+};
+
+/**
+ * Build the tool that publishes a file from the agent's sandbox and returns its link.
+ *
+ * @remarks
+ * This is the return path for files. Inbound attachments land in the session sandbox, the agent
+ * works on them there with `bash` and the file tools, and the result is a file with no way back to
+ * the conversation: a sandbox path is not a link, and the session's sandbox does not outlive it.
+ * Reading the bytes here rather than taking them as tool input keeps a document of any size out of
+ * the model's context, which is the difference between this and `upload_asset`.
+ *
+ * The upload lands under {@link SHARED_FILES_PREFIX} with a random suffix, so sharing the same
+ * filename twice produces two links rather than overwriting the first.
+ *
+ * @returns The `share_file` tool definition.
+ */
+export const shareFileTool = () =>
+  defineTool({
+    description:
+      "Publish a file from your sandbox and return a link to it. Use it whenever the person " +
+      "should end up with the file itself: an export you generated, a converted or edited " +
+      "version of something they attached, or an attachment a specialist needs. Write the file " +
+      "in the sandbox first, then pass its path. Give the person the returned url as a markdown " +
+      "link, and put that url in a specialist's brief when the work continues.",
+    /**
+     * Read the sandbox file and upload it.
+     *
+     * @param input - Validated tool input.
+     * @param ctx - Runtime context supplying the live sandbox handle.
+     * @returns The file's `url`, `downloadUrl`, stored `pathname`, `filename`, `contentType`, and
+     * `size`, or `success: false` with an `error` message.
+     */
+    async execute({ path, filename, contentType }, ctx) {
+      const name = sharedFilename(path, filename);
+      try {
+        const sandbox = await ctx.getSandbox();
+        const bytes = await sandbox.readBinaryFile({ path });
+        if (bytes === null) {
+          return {
+            downloadUrl: "",
+            error: `No file at ${path} in the sandbox. Check the path with bash before sharing.`,
+            filename: name,
+            pathname: "",
+            size: 0,
+            success: false,
+            url: "",
+          };
+        }
+        if (bytes.byteLength > MAX_SHARED_FILE_BYTES) {
+          return {
+            downloadUrl: "",
+            error: `${name} is ${bytes.byteLength} bytes, over the ${MAX_SHARED_FILE_BYTES} byte share limit. Tell the person what you produced instead of sharing it.`,
+            filename: name,
+            pathname: "",
+            size: bytes.byteLength,
+            success: false,
+            url: "",
+          };
+        }
+        const blob = await put(
+          `${SHARED_FILES_PREFIX}${name}`,
+          Buffer.from(bytes),
+          {
+            access: "public",
+            addRandomSuffix: true,
+            contentType,
+          }
+        );
+        return {
+          contentType: blob.contentType,
+          downloadUrl: blob.downloadUrl,
+          filename: name,
+          pathname: blob.pathname,
+          size: bytes.byteLength,
+          success: true,
+          url: blob.url,
+        };
+      } catch (error) {
+        return {
+          downloadUrl: "",
+          error: error instanceof Error ? error.message : "Share failed",
+          filename: name,
+          pathname: "",
+          size: 0,
+          success: false,
+          url: "",
+        };
+      }
+    },
+    inputSchema: z.object({
+      contentType: z
+        .string()
+        .max(255)
+        .optional()
+        .describe(
+          'MIME type, e.g. "text/csv". Inferred from the extension when omitted.'
+        ),
+      filename: z
+        .string()
+        .max(255)
+        .optional()
+        .describe(
+          "Name the person should see, when it differs from the file's name in the sandbox."
+        ),
+      path: z
+        .string()
+        .min(1)
+        .max(1024)
+        .describe(
+          'Sandbox path of the file to share, e.g. "/workspace/attachments/<hash>/brief.docx" or "exports/report.csv".'
+        ),
+    }),
+    outputSchema: z.object({
+      contentType: z.string().optional(),
+      downloadUrl: z.string(),
+      error: z.string().optional(),
+      filename: z.string(),
+      pathname: z.string(),
+      size: z.number(),
       success: z.boolean(),
       url: z.string(),
     }),

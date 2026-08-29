@@ -51,6 +51,16 @@ export const USER_PREFERENCES_PREFIX = "user-preferences/";
 export const ARTIFACTS_PREFIX = "artifacts/";
 
 /**
+ * Blob path prefix holding files the lead hands back to the person it is talking to.
+ *
+ * @remarks
+ * Deliberately not a reserved namespace. A shared file is an ordinary asset: the person opens it
+ * from the link in the conversation, and a specialist briefed on it reaches it with
+ * `download_asset`. Reserving the prefix would close both paths to keep out a write nobody makes.
+ */
+export const SHARED_FILES_PREFIX = "shared/";
+
+/**
  * Every reserved prefix, keyed by the prefix itself.
  *
  * @remarks
