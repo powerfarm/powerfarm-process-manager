@@ -32,6 +32,7 @@ The combined project ships the Next.js app and the eve runtime as one Vercel dep
 | Vercel Blob store | Blob credentials |
 | Starter web authentication | `EVE_CHAT_PASSWORD` |
 | Durable process memory | `DATABASE_URL` plus `pnpm db:migrate` |
+| Cross-app access over MCP | `EVE_MCP_BEARER_TOKEN` and `EVE_MCP_PRINCIPAL_ID` |
 | Optional social scheduling | `TYPEFULLY_API_KEY` |
 
 Slack remains optional. Add its connector only if you want Slack as a second channel.
@@ -61,7 +62,9 @@ Each specialist has a distinct job: the product marketer decides what the team c
 - **Delegation goes one level deep.** Specialists do their own research and edit their own drafts against a written rubric rather than spawning further agents.
 - **Nothing irreversible happens without you.** Sends and deletes in Resend, deletes and scheduled publishes in Typefully, and page moves in Notion all wait for your approval. Drafting stays friction-free. The email specialist also only sees 47 of Resend's roughly 85 tools, so account administration is out of reach entirely.
 - **Slack can pin four starter prompts** when that optional channel is configured: sharpen our positioning, write a blog post, draft social posts, review a page's SEO.
-- **Process memory is conversational.** The lead alone creates, activates, reads, and mutates a process after explicit agreement. Specialists receive a bounded projection when needed; the browser and `/api/processes/*` only read.
+- **You can hand it a file.** The `+` in the composer attaches documents, spreadsheets, and images to a message. They arrive as real files in the lead's sandbox, so it opens and converts them there rather than asking you to paste the contents, and hands anything it produces back as a link with a preview in the conversation.
+- **Process memory is conversational.** The lead alone creates, activates, reads, and mutates a process after explicit agreement. Specialists receive a bounded projection when needed; the browser and `/api/processes/*` only read. The sidebar lists your processes so one is reachable from any conversation, and a process holds one big subject rather than a task.
+- **Another app can talk to the same lead.** With the MCP variables set, `/eve/v1/mcp` publishes the lead to any MCP client, bound to the same user who owns the process graph. Work started in your editor and work started in the browser land in the same memory.
 - **State means durable state.** `Em andamento`, `Aguardando`, `Bloqueado`, `Concluído`, and `Arquivado` are stored in the process. The separate `Processando` pulse only describes a tool call in flight.
 
 The full approval matrix, the credential model, and the reasoning behind each boundary live in [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
@@ -96,7 +99,7 @@ pnpm db:migrate   # apply chat and process schema migrations to DATABASE_URL
 | --- | --- |
 | Agent framework | [eve](https://eve.dev) |
 | Language | TypeScript (strict, ESM), Node 24.x |
-| Chat surfaces | Marketing Room web app, optional Slack, eve terminal UI |
+| Chat surfaces | Marketing Room web app, optional Slack, eve terminal UI, MCP clients |
 | Web application | Next.js 16, React 19, Tailwind CSS, Streamdown |
 | Authentication | Starter password or Better Auth with Sign in with Vercel |
 | Conversation history | Browser storage in starter mode, Neon in production mode |
@@ -104,9 +107,9 @@ pnpm db:migrate   # apply chat and process schema migrations to DATABASE_URL
 | Long-form deliverables and briefs | Notion (MCP) |
 | Social publishing | Typefully (MCP) |
 | Email campaigns | Resend (MCP) |
-| Shared state and files | [Vercel Blob](https://vercel.com/docs/vercel-blob) |
+| Shared state, attachments handed back, and files | [Vercel Blob](https://vercel.com/docs/vercel-blob) |
 | Model access | [Vercel AI Gateway](https://vercel.com/docs/ai-gateway) |
-| Skill reference files and `bash` | [Vercel Sandbox](https://vercel.com/docs/sandbox) |
+| Skill reference files, `bash`, and inbound attachments | [Vercel Sandbox](https://vercel.com/docs/sandbox) |
 | Lint and format | [Ultracite](https://www.ultracite.ai/), a [Biome](https://biomejs.dev/) preset |
 
 ## Customizing

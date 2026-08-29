@@ -21,11 +21,14 @@ import {
 } from "@/app/_components/agent-chat-events";
 import { useChatShell } from "@/app/_components/chat-shell-context";
 import { ChatComposer } from "@/components/chat/composer";
+import type { ComposerAttachment } from "@/lib/chat/attachments";
 import { createClientChat, getClientChat } from "@/lib/chat/persistence-client";
 import {
   clearPendingChatMessage,
   isProvisionalChatId,
   readPendingChatMessage,
+  takePendingChatAttachments,
+  writePendingChatAttachments,
   writePendingChatMessage,
 } from "@/lib/chat/provisional-chat";
 import type { ActiveChat, SetupStatus } from "@/lib/chat/types";
@@ -48,6 +51,9 @@ export function SessionChatPage({
   const { setActiveChatId, setupStatus, touchChat, viewer } = useChatShell();
   const [activeChat, setActiveChat] = useState<ActiveChat | null>(null);
   const [draft, setDraft] = useState("");
+  const [attachments, setAttachments] = useState<readonly ComposerAttachment[]>(
+    []
+  );
   const [controllerReady, setControllerReady] = useState(false);
   const [controllerStatus, setControllerStatus] = useState(
     IDLE_CONTROLLER_STATUS
@@ -58,6 +64,10 @@ export function SessionChatPage({
   const [clientError, setClientError] = useState<string | null>(null);
   const [dismissedError, setDismissedError] = useState<string | null>(null);
   const controllerRef = useRef<AgentChatController | null>(null);
+  const clearComposer = useCallback(() => {
+    setDraft("");
+    setAttachments([]);
+  }, []);
   const currentChatIdRef = useRef(chatId);
   const pendingConsumedRef = useRef(false);
   const provisionalCreateStartedRef = useRef(new Set<string>());
@@ -124,6 +134,10 @@ export function SessionChatPage({
         }
 
         writePendingChatMessage(created.id, pendingMessage);
+        writePendingChatAttachments(
+          created.id,
+          takePendingChatAttachments(chatId)
+        );
         clearPendingChatMessage(chatId);
         touchChat(created);
         setActiveChatId(created.id);
@@ -297,15 +311,21 @@ export function SessionChatPage({
 
     pendingConsumedRef.current = true;
 
-    void controller.sendMessage(pendingUserMessage, {
-      clearDraft: () => setDraft(""),
-      restoreDraft: (value) => {
-        setPendingUserMessage(null);
-        setDraft(value);
-      },
-    });
+    void controller.sendMessage(
+      pendingUserMessage,
+      takePendingChatAttachments(chatId),
+      {
+        clearDraft: clearComposer,
+        restoreDraft: (value, restoredAttachments) => {
+          setPendingUserMessage(null);
+          setDraft(value);
+          setAttachments(restoredAttachments);
+        },
+      }
+    );
   }, [
     chatId,
+    clearComposer,
     controllerReady,
     controllerStatus.isBusy,
     controllerStatus.isDisabled,
@@ -337,7 +357,7 @@ export function SessionChatPage({
   );
 
   const handleComposerSubmit = useCallback(
-    async (text: string) => {
+    async (text: string, submitted: readonly ComposerAttachment[]) => {
       if (isLoadingChat) {
         setClientError("Chat history is still loading.");
         return;
@@ -350,12 +370,15 @@ export function SessionChatPage({
         return;
       }
 
-      await controller.sendMessage(text, {
-        clearDraft: () => setDraft(""),
-        restoreDraft: setDraft,
+      await controller.sendMessage(text, submitted, {
+        clearDraft: clearComposer,
+        restoreDraft: (value, restoredAttachments) => {
+          setDraft(value);
+          setAttachments(restoredAttachments);
+        },
       });
     },
-    [isLoadingChat]
+    [clearComposer, isLoadingChat]
   );
 
   const handleComposerStop = useCallback(() => {
@@ -424,6 +447,7 @@ export function SessionChatPage({
       <div className="shrink-0 pb-4 sm:pb-6">
         <div className="mx-auto w-full max-w-2xl px-4 sm:px-6">
           <ChatComposer
+            attachments={attachments}
             disabled={composerDisabled}
             disabledReason={composerDisabledReason}
             footerStart={
@@ -433,6 +457,8 @@ export function SessionChatPage({
               />
             }
             isBusy={controllerStatus.isBusy}
+            onAttachmentError={setClientError}
+            onAttachmentsChange={setAttachments}
             onChange={setDraft}
             onStop={handleComposerStop}
             onSubmit={handleComposerSubmit}

@@ -1,5 +1,9 @@
 import { type AuthFn, localDev, vercelOidc } from "eve/channels/auth";
 import { eveChannel } from "eve/channels/eve";
+import {
+  ALLOWED_ATTACHMENT_MEDIA_TYPES,
+  MAX_ATTACHMENT_BYTES,
+} from "@/lib/chat/attachments";
 import { betterAuthEveAuth, passwordEveAuth } from "@/lib/eve-auth";
 
 const localDevAuth = localDev();
@@ -22,5 +26,8 @@ const localDevUser: AuthFn<Request> = async (request) => {
 
 export default eveChannel({
   auth: [betterAuthEveAuth, passwordEveAuth, localDevUser, vercelOidc()],
-  uploadPolicy: "disabled",
+  uploadPolicy: {
+    allowedMediaTypes: [...ALLOWED_ATTACHMENT_MEDIA_TYPES],
+    maxBytes: MAX_ATTACHMENT_BYTES,
+  },
 });

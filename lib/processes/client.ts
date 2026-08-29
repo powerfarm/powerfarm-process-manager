@@ -14,6 +14,13 @@ const processDetailSchema = z
   })
   .strict();
 
+const processListPageSchema = z
+  .object({
+    items: z.array(processSummarySchema),
+    nextCursor: z.string().nullable(),
+  })
+  .strict();
+
 const processGraphPageSchema = z
   .object({
     edges: z.array(processEdgeSchema),
@@ -30,6 +37,7 @@ const processEventPageSchema = z
   .strict();
 
 export type ProcessDetail = z.infer<typeof processDetailSchema>;
+export type ProcessListPageData = z.infer<typeof processListPageSchema>;
 export type ProcessGraphPageData = z.infer<typeof processGraphPageSchema>;
 export type ProcessEventPageData = z.infer<typeof processEventPageSchema>;
 export type ProcessFetch = typeof fetch;
@@ -124,6 +132,21 @@ export function createProcessClient(fetcher: ProcessFetch = fetch) {
         `/api/processes/${encodeURIComponent(processId)}/graph${queryString(options)}`,
         signal,
         processGraphPageSchema
+      );
+    },
+    list(
+      options: {
+        readonly cursor?: string;
+        readonly limit?: number;
+        readonly q?: string;
+      },
+      signal: AbortSignal
+    ) {
+      return processJson(
+        fetcher,
+        `/api/processes${queryString(options)}`,
+        signal,
+        processListPageSchema
       );
     },
   };
