@@ -2,6 +2,8 @@
 
 Guidance for AI coding agents working in this repository.
 
+**Start with [`docs/SYSTEM_MAP.md`](./docs/SYSTEM_MAP.md).** It maps the directories, traces each runtime flow end to end, and records the framework behaviors that are expensive to rediscover. This file is the rules; that one is the terrain.
+
 ## Project overview
 
 This repository holds a team of marketing agents built on the [eve](https://eve.dev) agent framework. The root **lead** agent holds the shared product picture (brand context in Vercel Blob), owns the conversational process graph, and routes each request to one specialist: `product-marketer` for positioning and messaging, `content-marketer` for long-form pieces, `social-media-coordinator` for short-form posts and the Typefully queue, `seo` for organic search work, or `email` for adapting copy into mail and running Resend. The five specialists have no subagents of their own: each does its own web research and its own review pass inline. The lead's workflow lives in `agent/instructions/`; each specialist's lives in `agent/subagents/<id>/instructions.md`.

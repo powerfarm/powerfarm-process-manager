@@ -2,6 +2,8 @@
 
 This document maps how the agent is put together, for humans and AI agents working in the repo. Keep it current as the codebase evolves.
 
+It covers the shape of the system and the reasoning behind each boundary. For the file-level map, the traced runtime flows, and the framework behaviors worth knowing before you edit, read [`SYSTEM_MAP.md`](./SYSTEM_MAP.md).
+
 ## Project identification
 
 - **Name:** `marketing-team-eve-template`

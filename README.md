@@ -156,7 +156,7 @@ Set `PAID_ADS_AGENT_URL`, and the lead picks the specialist up from its `descrip
 | [Human in the loop](https://eve.dev/docs/human-in-the-loop) | The approval gates above |
 | [Vercel Connect](https://vercel.com/docs/connect) | Notion, Resend, and Slack credentials |
 
-Deeper internals live in [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) and agent guidance lives in [`AGENTS.md`](./AGENTS.md).
+Deeper internals live in [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md), the file-level map and traced flows live in [`docs/SYSTEM_MAP.md`](./docs/SYSTEM_MAP.md), and agent guidance lives in [`AGENTS.md`](./AGENTS.md).
 
 ## Related templates
 
