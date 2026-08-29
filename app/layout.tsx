@@ -1,6 +1,6 @@
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Newsreader } from "next/font/google";
 import type { ReactNode } from "react";
 import { AuthDisplayPreHydrationHead } from "@/components/auth/auth-display";
@@ -44,6 +44,11 @@ const newsreader = Newsreader({
 });
 
 export const metadata: Metadata = {
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black",
+    title,
+  },
   applicationName: title,
   description,
   icons: {
@@ -64,6 +69,13 @@ export const metadata: Metadata = {
     description,
     title,
   },
+};
+
+export const viewport: Viewport = {
+  themeColor: [
+    { color: "#f3f7fd", media: "(prefers-color-scheme: light)" },
+    { color: "#080d19", media: "(prefers-color-scheme: dark)" },
+  ],
 };
 
 const themeScript = `

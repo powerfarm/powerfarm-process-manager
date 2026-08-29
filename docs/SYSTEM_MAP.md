@@ -43,6 +43,7 @@ There is no wiring file on the agent side. eve walks `agent/` at build time: a t
 | `app/_components/agent-chat-shell.tsx` | sidebar, auth modal, bootstrap sync | provides `useChatShell()` |
 | `app/api/processes/**` | read-only process routes | list, detail, graph, events |
 | `app/api/{bootstrap,chats,password-auth}/**` | viewer, setup status, chat history, login | |
+| `app/manifest.ts`, `app/icon.svg`, `app/apple-icon.tsx`, `app/icon-512.png/` | the installable icon and the web app manifest | `lib/app-icon.ts` composes the square once, so each generated size is one `img` |
 | `components/chat/` | composer, message renderer, sidebar, markdown | |
 | `components/processes/` | pill, panel, summary, graph list, log list, sidebar list | all read-only |
 | `lib/chat/` | client-side chat persistence, limits, attachment policy | `storageMode` decides browser vs Neon |
