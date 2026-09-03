@@ -457,6 +457,28 @@ describe("process read and binding tools", () => {
     });
   });
 
+  it("gives the model the internal id required to activate a found process", async () => {
+    const service = new FakeProcessService();
+    const process = summary();
+    service.processes.set(process.id, {
+      edges: [],
+      nodes: [],
+      process,
+      projection: projection(process),
+    });
+    const tools = buildProcessTools({ binding: binding(), service });
+
+    const result = await finalResult(
+      tools.findProcesses.execute({ limit: 20 }, toolContext())
+    );
+
+    expect(await tools.findProcesses.toModelOutput?.(result)).toEqual({
+      type: "text",
+      value:
+        "PROC-000123 | processId=process-1 | Launch test (Em andamento, version 1)",
+    });
+  });
+
   it("sends compact text to the model while retaining the structured result", async () => {
     const service = new FakeProcessService();
     const tools = buildProcessTools({ binding: binding(), service });

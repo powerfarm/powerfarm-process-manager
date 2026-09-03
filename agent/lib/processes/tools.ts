@@ -204,7 +204,7 @@ export function buildProcessTools({
           : result.items
               .map(
                 (process) =>
-                  `${formatProcessNumber(process.number)}: ${process.title} (${PROCESS_STATUS_LABELS[process.status]}, version ${process.version})`
+                  `${formatProcessNumber(process.number)} | processId=${process.id} | ${process.title} (${PROCESS_STATUS_LABELS[process.status]}, version ${process.version})`
               )
               .join("\n")
       );
