@@ -133,6 +133,76 @@ describe.runIf(runDatabaseTests)("Drizzle process repository", () => {
     ).rejects.toMatchObject({ code: "version_conflict", currentVersion: 2 });
   });
 
+  it("scopes semantic node and edge ids to their process", async () => {
+    const ownerId = `integration-owner-${crypto.randomUUID()}`;
+    const service = createProcessService(createDrizzleProcessRepository());
+    const first = await service.createProcess({
+      context: commandContext(ownerId, "local-ids-first"),
+      reason: "Create the first local-id process.",
+      title: "First local-id process",
+    });
+    const second = await service.createProcess({
+      context: commandContext(ownerId, "local-ids-second"),
+      reason: "Create the second local-id process.",
+      title: "Second local-id process",
+    });
+
+    for (const [suffix, created] of [
+      ["first", first],
+      ["second", second],
+    ] as const) {
+      await service.mutateGraph({
+        context: commandContext(
+          ownerId,
+          `local-ids-mutation-${suffix}`,
+          "mutate_process_graph"
+        ),
+        expectedVersion: 1,
+        operations: [
+          {
+            kind: "brief",
+            label: "Planning brief",
+            metadata: {},
+            nodeId: "source-planning-sheet",
+            op: "add_node",
+          },
+          {
+            edgeId: "contains-planning-source",
+            metadata: {},
+            op: "link_nodes",
+            relation: "contains",
+            sourceNodeId: created.affectedNodeIds[0] ?? "",
+            targetNodeId: "source-planning-sheet",
+          },
+        ],
+        processId: created.process.id,
+        reason: "Add the same semantic graph ids to this process.",
+      });
+    }
+
+    const firstSnapshot = await service.readProcess({
+      ownerId,
+      processId: first.process.id,
+    });
+    const secondSnapshot = await service.readProcess({
+      ownerId,
+      processId: second.process.id,
+    });
+
+    expect(firstSnapshot?.nodes).toContainEqual(
+      expect.objectContaining({ id: "source-planning-sheet" })
+    );
+    expect(secondSnapshot?.nodes).toContainEqual(
+      expect.objectContaining({ id: "source-planning-sheet" })
+    );
+    expect(firstSnapshot?.edges).toContainEqual(
+      expect.objectContaining({ id: "contains-planning-source" })
+    );
+    expect(secondSnapshot?.edges).toContainEqual(
+      expect.objectContaining({ id: "contains-planning-source" })
+    );
+  });
+
   it("rejects update and delete against an existing process event", async () => {
     const ownerId = `integration-owner-${crypto.randomUUID()}`;
     const service = createProcessService(createDrizzleProcessRepository());

@@ -22,6 +22,13 @@
       "when": 1787493717693,
       "tag": "0002_process_graph",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1788451229539,
+      "tag": "0003_process_local_graph_ids",
+      "breakpoints": true
     }
   ]
 }

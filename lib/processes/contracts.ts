@@ -359,6 +359,7 @@ export const PROCESS_TOOL_NAMES = [
   "inspect_process_graph",
   "read_process_history",
   "mutate_process_graph",
+  "observe_process_artifact",
   "change_process_state",
   "update_process_tags",
 ] as const;

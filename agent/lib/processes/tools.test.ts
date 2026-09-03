@@ -1,5 +1,5 @@
 import type { ToolContext } from "eve/tools";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
 import {
   buildProcessTools,
@@ -10,6 +10,7 @@ import type {
   ProcessSummary,
 } from "@/lib/processes/contracts";
 import { ProcessError } from "@/lib/processes/errors";
+import type { GovernedArtifactSnapshot } from "@/lib/processes/governed-artifacts";
 import type {
   ProcessEventPage,
   ProcessGraphPage,
@@ -101,6 +102,9 @@ class FakeProcessService implements ProcessService {
     null;
   lastMutateGraphInput: Parameters<ProcessService["mutateGraph"]>[0] | null =
     null;
+  lastObserveArtifactInput:
+    | Parameters<ProcessService["observeArtifact"]>[0]
+    | null = null;
   lastUpdateTagsInput: Parameters<ProcessService["updateTags"]>[0] | null =
     null;
 
@@ -168,6 +172,13 @@ class FakeProcessService implements ProcessService {
     input: Parameters<ProcessService["mutateGraph"]>[0]
   ): Promise<ProcessMutationResult> {
     this.lastMutateGraphInput = input;
+    return this.commit(input, (process) => process);
+  }
+
+  observeArtifact(
+    input: Parameters<ProcessService["observeArtifact"]>[0]
+  ): Promise<ProcessMutationResult> {
+    this.lastObserveArtifactInput = input;
     return this.commit(input, (process) => process);
   }
 
@@ -586,6 +597,79 @@ describe("process mutation tools", () => {
     expect(harness.state.value).toEqual({
       processId: harness.process.id,
       projectionVersion: 2,
+    });
+  });
+
+  it("records only the GitHub observation returned by the server-side observer", async () => {
+    const service = new FakeProcessService();
+    const process = summary();
+    service.processes.set(process.id, {
+      edges: [],
+      nodes: [],
+      process,
+      projection: projection(process),
+    });
+    const state = binding();
+    state.update(() => ({
+      processId: process.id,
+      projectionVersion: process.version,
+    }));
+    const artifact: GovernedArtifactSnapshot = {
+      blobSha: "b".repeat(40),
+      checksState: "passing",
+      checksSuccessful: 1,
+      checksTotal: 1,
+      contentSha256: "c".repeat(64),
+      observedCommit: "a".repeat(40),
+      path: "target/future-body-narrative.md",
+      provider: "github",
+      pullRequestNumber: null,
+      pullRequestState: null,
+      pullRequestUrl: null,
+      repository: "powerfarm/planning",
+      requestedRef: "main",
+      reviewsApproved: 0,
+      reviewsChangesRequested: 0,
+      url: "https://github.com/powerfarm/planning/blob/main/target/future-body-narrative.md",
+    };
+    const observer = {
+      observe: vi.fn(async () => artifact),
+    };
+    const tools = buildProcessTools({
+      artifactObserver: observer,
+      binding: state,
+      service,
+    });
+
+    await finalResult(
+      tools.observeProcessArtifact.execute(
+        {
+          expectedVersion: 1,
+          nodeId: "source-target-body",
+          path: artifact.path,
+          reason: "Observe the governed planning source.",
+          repository: artifact.repository,
+          requestedRef: "main",
+        },
+        { ...toolContext(), toolName: "observe_process_artifact" }
+      )
+    );
+
+    expect(observer.observe).toHaveBeenCalledWith({
+      path: artifact.path,
+      repository: artifact.repository,
+      requestedRef: "main",
+    });
+    expect(service.lastObserveArtifactInput).toMatchObject({
+      artifact: {
+        contentSha256: "c".repeat(64),
+        observedCommit: "a".repeat(40),
+      },
+      context: {
+        ownerId: "owner-1",
+        toolName: "observe_process_artifact",
+      },
+      nodeId: "source-target-body",
     });
   });
 

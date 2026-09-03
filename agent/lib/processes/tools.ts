@@ -1,6 +1,11 @@
 import { defineTool, type ToolContext, toolOutput } from "eve/tools";
 import { z } from "zod";
 import {
+  createGitHubArtifactObserver,
+  type GitHubArtifactObserver,
+} from "#lib/github/artifact-observer.js";
+import { POWERFARM_PLANNING_REPOSITORY } from "#lib/github/config.js";
+import {
   type ActiveProcessState,
   activeProcessState,
   PROCESS_EVENT_PAGE_SIZE,
@@ -37,6 +42,7 @@ export interface ProcessBinding {
 }
 
 interface ProcessToolDependencies {
+  readonly artifactObserver?: GitHubArtifactObserver;
   readonly binding: ProcessBinding;
   readonly service: ProcessService;
 }
@@ -71,6 +77,8 @@ const processHistoryResultSchema = z
     processId: z.string(),
   })
   .strict();
+
+const GITHUB_REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
 const optionalProcessIdSchema = z.object({
   processId: z
@@ -168,6 +176,7 @@ function committedToolResult(
 }
 
 export function buildProcessTools({
+  artifactObserver = createGitHubArtifactObserver(),
   binding,
   service,
 }: ProcessToolDependencies) {
@@ -405,6 +414,47 @@ export function buildProcessTools({
     toModelOutput: compactMutationOutput,
   });
 
+  const observeProcessArtifact = defineTool({
+    description:
+      "Resolve one authorized GitHub file to an immutable commit and content digest, read its pull request, review, and check state, then commit that server-observed provenance to the active Process graph. Never copy a SHA from model text into the graph.",
+    async execute(input, ctx) {
+      const artifact = await artifactObserver.observe({
+        path: input.path,
+        repository: input.repository,
+        requestedRef: input.requestedRef,
+      });
+      return committedToolResult(
+        binding,
+        await service.observeArtifact({
+          artifact,
+          context: commandContext(ctx),
+          expectedVersion: input.expectedVersion,
+          label: input.label,
+          nodeId: input.nodeId,
+          processId: processIdOrActive(binding, input.processId),
+          reason: input.reason,
+        })
+      );
+    },
+    inputSchema: optionalProcessIdSchema
+      .extend({
+        expectedVersion: z.number().int().nonnegative(),
+        label: z.string().trim().min(1).max(240).optional(),
+        nodeId: z.string().trim().min(1).max(128),
+        path: z.string().trim().min(1).max(1024),
+        reason: z.string().trim().min(1).max(500),
+        repository: z
+          .string()
+          .trim()
+          .regex(GITHUB_REPOSITORY_PATTERN)
+          .default(POWERFARM_PLANNING_REPOSITORY),
+        requestedRef: z.string().trim().min(1).max(256).default("main"),
+      })
+      .strict(),
+    outputSchema: processToolResultSchema,
+    toModelOutput: compactMutationOutput,
+  });
+
   const changeProcessState = defineTool({
     description:
       "Commit an explicitly agreed durable process state. Use only in_progress, waiting, blocked, completed, or archived; transient execution activity is not process state.",
@@ -501,6 +551,7 @@ export function buildProcessTools({
     findProcesses,
     inspectProcessGraph,
     mutateProcessGraph,
+    observeProcessArtifact,
     readProcess,
     readProcessHistory,
     updateProcessTags,

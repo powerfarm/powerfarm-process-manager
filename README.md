@@ -29,12 +29,15 @@ The combined project ships the Next.js app and the eve runtime as one Vercel dep
 | --- | --- |
 | Notion connector | `NOTION_CONNECTOR` |
 | Resend connector | `RESEND_CONNECTOR` |
+| Governed GitHub planning sources | `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, `GITHUB_APP_PRIVATE_KEY`, `POWERFARM_PLANNING_REPOSITORY` |
 | Vercel Blob store | Blob credentials |
 | Starter web authentication | `EVE_CHAT_PASSWORD` |
 | Durable process memory | `DATABASE_URL` plus `pnpm db:migrate` |
 | Optional social scheduling | `TYPEFULLY_API_KEY` |
 
 Slack remains optional. Add its connector only if you want Slack as a second channel.
+
+The lead reads the configured planning repository through the private PowerFarm GitHub App. Give the App read-only access to Contents, Pull requests, Checks, and Commit statuses, disable webhooks, and install it only on the repositories the Process may observe. Put its App ID, installation ID, and private key in Vercel environment variables. The runtime mints cached, short-lived installation tokens and narrows them again to the configured repository. GitHub remains the source of files, commits, pull requests, reviews, and checks; Process records the exact commit and content digest it consumed.
 
 ### Before your first email campaign
 
