@@ -49,7 +49,14 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { isChatTurnSettledEvent } from "@/lib/chat/events";
+import {
+  type ComposerAttachment,
+  toAttachmentUserContent,
+} from "@/lib/chat/attachments";
+import {
+  isChatTurnSettledEvent,
+  withoutInlineAttachmentBytes,
+} from "@/lib/chat/events";
 import { getChatMessageLengthError } from "@/lib/chat/limits";
 import {
   appendClientChatEvent,
@@ -93,13 +100,17 @@ interface StreamSessionOptions {
 
 export interface DraftHandlers {
   readonly clearDraft: () => void;
-  readonly restoreDraft: (value: string) => void;
+  readonly restoreDraft: (
+    value: string,
+    attachments: readonly ComposerAttachment[]
+  ) => void;
 }
 
 export interface AgentChatController {
   readonly reset: () => void;
   readonly sendMessage: (
     text: string,
+    attachments: readonly ComposerAttachment[],
     draftHandlers: DraftHandlers
   ) => Promise<void>;
   readonly stop: () => void;
@@ -568,6 +579,13 @@ function hasOpenChatTurn(events: readonly MessageStreamEvent[]) {
   return open;
 }
 
+function receiveStreamEvent(
+  event: MessageStreamEvent,
+  namespace: string | undefined
+): MessageStreamEvent {
+  return namespaceStreamEvent(withoutInlineAttachmentBytes(event), namespace);
+}
+
 function namespaceStreamEvent(
   event: MessageStreamEvent,
   namespace: string | undefined
@@ -780,7 +798,7 @@ export function AgentChatSession({
                 streamEventsRef.current
               )
             : preserveKnownInitialEvents(
-                snapshot.events,
+                snapshot.events.map(withoutInlineAttachmentBytes),
                 knownInitialEventsRef.current
               );
         const events = mergeLocalEvents(snapshotEvents, localEventsRef.current);
@@ -833,7 +851,7 @@ export function AgentChatSession({
 
   const persistStreamEvent = useCallback(
     (event: MessageStreamEvent) => {
-      const displayEvent = namespaceStreamEvent(
+      const displayEvent = receiveStreamEvent(
         event,
         persistedSessionRef.current?.state?.sessionId
       );
@@ -1041,7 +1059,11 @@ export function AgentChatSession({
   );
 
   const sendMessage = useCallback(
-    async (text: string, draftHandlers: DraftHandlers) => {
+    async (
+      text: string,
+      attachments: readonly ComposerAttachment[],
+      draftHandlers: DraftHandlers
+    ) => {
       const message = text.trim();
 
       if (!message || isTurnBlocked || localPendingUserMessageRef.current) {
@@ -1056,7 +1078,7 @@ export function AgentChatSession({
       }
 
       if (isWaitingForAuthorization) {
-        draftHandlers.restoreDraft(message);
+        draftHandlers.restoreDraft(message, attachments);
         setClientError(
           disabledReason ?? "Connect the requested service before continuing."
         );
@@ -1069,7 +1091,7 @@ export function AgentChatSession({
       };
       const restoreAfterFailedSend = (errorMessage?: string) => {
         clearLocalPendingUserMessage();
-        draftHandlers.restoreDraft(message);
+        draftHandlers.restoreDraft(message, attachments);
 
         if (errorMessage) {
           setClientError(errorMessage);
@@ -1138,7 +1160,7 @@ export function AgentChatSession({
 
       try {
         startFinalizingTurn();
-        await agent.send(message, {
+        await agent.send(toAttachmentUserContent(message, attachments), {
           clientContext: createConnectionClientContext(
             enabledConnections,
             setupStatus.connectionsAvailable
@@ -1422,7 +1444,7 @@ export function AgentChatSession({
             return;
           }
 
-          const displayEvent = namespaceStreamEvent(
+          const displayEvent = receiveStreamEvent(
             event,
             activeChat.session?.sessionId
           );

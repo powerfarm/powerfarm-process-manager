@@ -1,4 +1,5 @@
 import { ImageResponse } from "next/og";
+import { appIconDataUri } from "@/lib/app-icon";
 
 export const size = {
   height: 180,
@@ -7,24 +8,21 @@ export const size = {
 
 export const contentType = "image/png";
 
+/**
+ * The home screen icon iOS uses when the room is added to a device.
+ *
+ * @remarks
+ * Rendered edge to edge with no corner rounding, since the platform applies its own mask and
+ * pre-rounding it would round the corners twice.
+ */
 export default function AppleIcon() {
   return new ImageResponse(
-    <div
-      style={{
-        alignItems: "center",
-        background: "#5546d8",
-        color: "white",
-        display: "flex",
-        fontFamily: "Arial, sans-serif",
-        fontSize: 42,
-        fontWeight: 700,
-        height: "100%",
-        justifyContent: "center",
-        width: "100%",
-      }}
-    >
-      M/5
-    </div>,
+    <img
+      alt=""
+      height={size.height}
+      src={appIconDataUri(size.width)}
+      width={size.width}
+    />,
     size
   );
 }
