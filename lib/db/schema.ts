@@ -2,10 +2,12 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -162,7 +164,7 @@ export const processNode = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
-    id: text("id").primaryKey(),
+    id: text("id").notNull(),
     kind: text("kind").notNull(),
     label: text("label").notNull(),
     metadata: jsonb("metadata")
@@ -179,6 +181,10 @@ export const processNode = pgTable(
       .defaultNow(),
   },
   (table) => [
+    primaryKey({
+      columns: [table.processId, table.id],
+      name: "process_node_process_id_id_pk",
+    }),
     index("idx_process_node_process").on(table.processId),
     index("idx_process_node_process_kind").on(table.processId, table.kind),
     index("idx_process_node_process_updated").on(
@@ -198,7 +204,7 @@ export const processEdge = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
-    id: text("id").primaryKey(),
+    id: text("id").notNull(),
     metadata: jsonb("metadata")
       .$type<Readonly<Record<string, JsonValue>>>()
       .notNull()
@@ -208,18 +214,28 @@ export const processEdge = pgTable(
       .notNull()
       .references(() => process.id, { onDelete: "cascade" }),
     relation: text("relation").notNull(),
-    sourceNodeId: text("source_node_id")
-      .notNull()
-      .references(() => processNode.id),
-    targetNodeId: text("target_node_id")
-      .notNull()
-      .references(() => processNode.id),
+    sourceNodeId: text("source_node_id").notNull(),
+    targetNodeId: text("target_node_id").notNull(),
     tombstonedAt: timestamp("tombstoned_at", { withTimezone: true }),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
   (table) => [
+    primaryKey({
+      columns: [table.processId, table.id],
+      name: "process_edge_process_id_id_pk",
+    }),
+    foreignKey({
+      columns: [table.processId, table.sourceNodeId],
+      foreignColumns: [processNode.processId, processNode.id],
+      name: "process_edge_source_process_node_fk",
+    }),
+    foreignKey({
+      columns: [table.processId, table.targetNodeId],
+      foreignColumns: [processNode.processId, processNode.id],
+      name: "process_edge_target_process_node_fk",
+    }),
     index("idx_process_edge_process").on(table.processId),
     index("idx_process_edge_source").on(table.processId, table.sourceNodeId),
     index("idx_process_edge_target").on(table.processId, table.targetNodeId),

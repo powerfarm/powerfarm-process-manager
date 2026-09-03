@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ProcessEvent, ProcessSummary } from "@/lib/processes/contracts";
+import type { GovernedArtifactSnapshot } from "@/lib/processes/governed-artifacts";
 import type {
   CreateRepositoryProcessInput,
   ProcessListPage,
@@ -15,6 +16,25 @@ import {
 } from "@/lib/processes/service";
 
 const ownerOne = "owner-1";
+
+const artifact: GovernedArtifactSnapshot = {
+  blobSha: "b".repeat(40),
+  checksState: "passing",
+  checksSuccessful: 2,
+  checksTotal: 2,
+  contentSha256: "c".repeat(64),
+  observedCommit: "a".repeat(40),
+  path: "target/future-body-narrative.md",
+  provider: "github",
+  pullRequestNumber: 17,
+  pullRequestState: "open",
+  pullRequestUrl: "https://github.com/powerfarm/planning/pull/17",
+  repository: "powerfarm/planning",
+  requestedRef: "main",
+  reviewsApproved: 2,
+  reviewsChangesRequested: 0,
+  url: "https://github.com/powerfarm/planning/blob/main/target/future-body-narrative.md",
+};
 
 function context(
   overrides: Partial<ProcessCommandContext> = {}
@@ -412,6 +432,73 @@ describe("ProcessService", () => {
       })
     ).rejects.toMatchObject({ code: "invalid_graph_operation" });
     expect(harness.repository.events).toHaveLength(1);
+  });
+
+  it("reserves governed artifact provenance for the observation command", async () => {
+    const harness = createHarness();
+    const created = await createLaunchProcess(harness);
+
+    await expect(
+      harness.service.mutateGraph({
+        context: context({
+          callId: "call-2",
+          toolName: "mutate_process_graph",
+        }),
+        expectedVersion: 1,
+        operations: [
+          {
+            kind: "governed_artifact",
+            label: "Fabricated source",
+            metadata: { observed_commit: "invented" },
+            nodeId: "source-target-body",
+            op: "add_node",
+          },
+        ],
+        processId: created.process.id,
+        reason: "Try to fabricate a GitHub observation.",
+      })
+    ).rejects.toMatchObject({ code: "invalid_graph_operation" });
+    expect(harness.repository.events).toHaveLength(1);
+  });
+
+  it("commits a server-observed artifact as one versioned graph event", async () => {
+    const harness = createHarness();
+    const created = await createLaunchProcess(harness);
+
+    const result = await harness.service.observeArtifact({
+      artifact,
+      context: context({
+        callId: "call-2",
+        toolName: "observe_process_artifact",
+      }),
+      expectedVersion: 1,
+      label: "Future Body Narrative",
+      nodeId: "source-target-body",
+      processId: created.process.id,
+      reason: "Observe the governed planning source.",
+    });
+    const snapshot = await harness.service.readProcess({
+      ownerId: ownerOne,
+      processId: created.process.id,
+    });
+    const node = snapshot?.nodes.find(
+      (candidate) => candidate.id === "source-target-body"
+    );
+
+    expect(result.version).toBe(2);
+    expect(node).toMatchObject({
+      kind: "governed_artifact",
+      label: "Future Body Narrative",
+      metadata: {
+        observed_commit: "a".repeat(40),
+        provider: "github",
+        repository: "powerfarm/planning",
+      },
+    });
+    expect(harness.repository.events.at(-1)).toMatchObject({
+      operationType: "observe_process_artifact",
+      toolName: "observe_process_artifact",
+    });
   });
 
   it("changes durable state only through an allowed transition", async () => {

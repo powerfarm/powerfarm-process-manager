@@ -1,6 +1,8 @@
 import type { ProcessProjection } from "@/lib/processes/contracts";
 
 export type ProcessErrorCode =
+  | "artifact_not_allowed"
+  | "artifact_observation_failed"
   | "process_not_found"
   | "process_store_unavailable"
   | "version_conflict"
@@ -9,6 +11,8 @@ export type ProcessErrorCode =
   | "replayed_mutation";
 
 const HTTP_STATUS_BY_CODE: Readonly<Record<ProcessErrorCode, number>> = {
+  artifact_not_allowed: 403,
+  artifact_observation_failed: 502,
   invalid_graph_operation: 400,
   process_not_found: 404,
   process_store_unavailable: 503,

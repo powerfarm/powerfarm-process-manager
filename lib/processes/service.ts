@@ -15,6 +15,12 @@ import {
   processStatusSchema,
 } from "@/lib/processes/contracts";
 import { ProcessError, toProcessError } from "@/lib/processes/errors";
+import {
+  GOVERNED_ARTIFACT_KIND,
+  type GovernedArtifactSnapshot,
+  governedArtifactMetadata,
+  isGovernedArtifactMetadataKey,
+} from "@/lib/processes/governed-artifacts";
 import { projectProcess } from "@/lib/processes/projection";
 import type {
   ProcessEventPage,
@@ -74,6 +80,13 @@ export interface ProcessService {
   ) => Promise<ProcessGraphPage | null>;
   readonly mutateGraph: (
     input: MutatingCommand & { readonly operations: readonly GraphOperation[] }
+  ) => Promise<ProcessMutationResult>;
+  readonly observeArtifact: (
+    input: MutatingCommand & {
+      readonly artifact: GovernedArtifactSnapshot;
+      readonly label?: string;
+      readonly nodeId: string;
+    }
   ) => Promise<ProcessMutationResult>;
   readonly readHistory: (
     input: OwnerProcessInput & {
@@ -166,6 +179,47 @@ interface AppliedGraph {
 
 function graphFailure(message: string): never {
   throw new ProcessError("invalid_graph_operation", message);
+}
+
+function assertNoGovernedArtifactMutation(
+  snapshot: ProcessSnapshot,
+  operations: readonly GraphOperation[]
+): void {
+  for (const operation of operations) {
+    if (
+      "metadata" in operation &&
+      operation.metadata &&
+      Object.keys(operation.metadata).some(isGovernedArtifactMetadataKey)
+    ) {
+      graphFailure(
+        "Governed artifact observations can only be written by observe_process_artifact."
+      );
+    }
+    if (
+      (operation.op === "add_node" || operation.op === "update_node") &&
+      operation.kind === GOVERNED_ARTIFACT_KIND
+    ) {
+      graphFailure(
+        "Governed artifact observations can only be written by observe_process_artifact."
+      );
+    }
+    if (
+      (operation.op === "update_node" || operation.op === "tombstone_node") &&
+      snapshot.nodes.some(
+        (node) =>
+          node.id === operation.nodeId && node.kind === GOVERNED_ARTIFACT_KIND
+      )
+    ) {
+      graphFailure(
+        "Governed artifact observations can only be changed by observe_process_artifact."
+      );
+    }
+  }
+}
+
+function artifactLabel(path: string): string {
+  const filename = path.split("/").at(-1) ?? path;
+  return filename.replace(/\.[^.]+$/, "").replaceAll(/[-_]+/g, " ");
 }
 
 function applyGraphOperations(input: {
@@ -596,6 +650,7 @@ export function createProcessService(
           operations: operations as unknown as JsonValue,
         }),
         transform(snapshot, now) {
+          assertNoGovernedArtifactMutation(snapshot, operations);
           const applied = applyGraphOperations({
             edges: snapshot.edges,
             nodes: snapshot.nodes,
@@ -611,6 +666,61 @@ export function createProcessService(
             process: copyProcess(snapshot.process, {
               projectionSchema: applied.projectionSchema,
             }),
+          };
+        },
+      });
+    },
+
+    async observeArtifact(input) {
+      const nodeId = input.nodeId.trim();
+      const label = (
+        input.label?.trim() || artifactLabel(input.artifact.path)
+      ).slice(0, 240);
+      if (!(nodeId && label)) {
+        graphFailure("A governed artifact requires a node id and label.");
+      }
+      return commitMutation({
+        command: input,
+        operationSummary: `Observed ${input.artifact.repository}/${input.artifact.path} at ${input.artifact.observedCommit.slice(0, 12)}.`,
+        operationType: "observe_process_artifact",
+        payload: eventPayload({
+          artifact: input.artifact as unknown as JsonValue,
+          nodeId,
+        }),
+        transform(snapshot, now) {
+          const index = snapshot.nodes.findIndex((node) => node.id === nodeId);
+          const current = snapshot.nodes[index];
+          if (current?.tombstonedAt) {
+            graphFailure(`Node ${nodeId} is tombstoned in this process.`);
+          }
+          const preservedMetadata = Object.fromEntries(
+            Object.entries(current?.metadata ?? {}).filter(
+              ([key]) => !isGovernedArtifactMetadataKey(key)
+            )
+          );
+          const node: ProcessNode = {
+            createdAt: current?.createdAt ?? now,
+            id: nodeId,
+            kind: GOVERNED_ARTIFACT_KIND,
+            label,
+            metadata: {
+              ...preservedMetadata,
+              ...governedArtifactMetadata(input.artifact, now),
+            },
+            processId: snapshot.process.id,
+            tombstonedAt: null,
+            updatedAt: now,
+          };
+          const nodes = [...snapshot.nodes];
+          if (index >= 0) {
+            nodes[index] = node;
+          } else {
+            nodes.push(node);
+          }
+          return {
+            affectedNodeIds: [nodeId],
+            nodes,
+            process: snapshot.process,
           };
         },
       });

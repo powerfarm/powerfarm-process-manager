@@ -379,7 +379,7 @@ async function persistDraft(
           tombstonedAt: sql`excluded.tombstoned_at`,
           updatedAt: sql`excluded.updated_at`,
         },
-        target: processNodeTable.id,
+        target: [processNodeTable.processId, processNodeTable.id],
       });
   }
   if (snapshot.edges.length > 0) {
@@ -408,7 +408,7 @@ async function persistDraft(
           tombstonedAt: sql`excluded.tombstoned_at`,
           updatedAt: sql`excluded.updated_at`,
         },
-        target: processEdgeTable.id,
+        target: [processEdgeTable.processId, processEdgeTable.id],
       });
   }
   await transaction
