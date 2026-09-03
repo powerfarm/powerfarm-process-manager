@@ -38,7 +38,7 @@ The combined project ships the Next.js app and the eve runtime as one Vercel dep
 
 Slack remains optional. Add its connector only if you want Slack as a second channel.
 
-The lead reads the configured planning repository through the private PowerFarm GitHub App. Give the App read-only access to Contents, Pull requests, Checks, and Commit statuses, disable webhooks, and install it only on the repositories the Process may observe. Put its App ID, installation ID, and private key in Vercel environment variables. The runtime mints cached, short-lived installation tokens and narrows them again to the configured repository. GitHub remains the source of files, commits, pull requests, reviews, and checks; Process records the exact commit and content digest it consumed.
+The lead reads the configured planning repository through the private PowerFarm GitHub App. The organization installation may cover a broader maintenance surface, while the lead runtime mints cached, short-lived installation tokens narrowed to read-only Contents, Pull requests, Checks, and Commit statuses on `POWERFARM_PLANNING_REPOSITORY`. Put the App ID, installation ID, and private key in Vercel environment variables. Future coding tools must request their own bounded write token and remain separate from the lead; no merge tool is exposed. GitHub remains the source of files, commits, pull requests, reviews, and checks; Process records the exact commit and content digest it consumed.
 
 ### Before your first email campaign
 
