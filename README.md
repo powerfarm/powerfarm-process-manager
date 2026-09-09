@@ -1,6 +1,14 @@
+# PowerFarm Process Manager
+
+This independent repository is the home for adapting the existing Marketing Room into a process manager. The inherited application below still runs the marketing team; the role conversion has not been implemented yet.
+
+The complete ancestral Git history and MIT license are preserved. Tag `foundation/marketing-room` identifies the unmodified starting point. See [FORK.md](./FORK.md) for provenance, working boundaries, and the adaptation map.
+
+## Inherited application
+
 <img width="2048" height="768" alt="eve Marketing Agent Template banner" src="https://github.com/user-attachments/assets/b72d9959-5bed-4b86-a40a-7fc7bfe8fe80" />
 
-# Marketing Team eve Template
+### Marketing Team eve Template
 
 [![Agent Stack](https://img.shields.io/badge/Agent%20Stack-000?style=flat-square&logo=vercel&logoColor=FFF&labelColor=000&color=000)](https://vercel.com/kb/agent-stack)
 [![MIT License](https://img.shields.io/badge/License-MIT-000?style=flat-square&logo=opensourceinitiative&logoColor=white&labelColor=000&color=000)](LICENSE)

@@ -2,6 +2,8 @@
 
 Guidance for AI coding agents working in this repository.
 
+**Repository boundary:** This is `powerfarm/powerfarm-process-manager`, the independent copy designated for the process-manager adaptation. Read [FORK.md](./FORK.md) first. Make adaptation changes here. The source Marketing Room repository, checkout, and deployment remain a separate application. The marketing descriptions below document the inherited implementation until its corresponding conversion lands.
+
 **Start with [`docs/SYSTEM_MAP.md`](./docs/SYSTEM_MAP.md).** It maps the directories, traces each runtime flow end to end, and records the framework behaviors that are expensive to rediscover. This file is the rules; that one is the terrain.
 
 ## Project overview
